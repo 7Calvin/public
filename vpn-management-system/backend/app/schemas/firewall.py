@@ -182,12 +182,19 @@ class NATRuleCreate(NATRuleBase):
 
     @field_validator("source_network")
     @classmethod
-    def validate_network(cls, v):
+    def validate_source_network(cls, v):
         if v is not None:
-            try:
-                ipaddress.ip_network(v, strict=False)
-            except ValueError:
-                raise ValueError(f"Invalid network: {v}")
+            for part in v.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    ipaddress.ip_network(part, strict=False)
+                except ValueError:
+                    try:
+                        ipaddress.ip_address(part)
+                    except ValueError:
+                        raise ValueError(f"Invalid IP/CIDR: {part}")
         return v
 
 
@@ -201,6 +208,23 @@ class NATRuleUpdate(BaseModel):
     internal_port: Optional[int] = Field(None, ge=1, le=65535)
     source_network: Optional[str] = None
     is_active: Optional[bool] = None
+
+    @field_validator("source_network")
+    @classmethod
+    def validate_source_network(cls, v):
+        if v is not None:
+            for part in v.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    ipaddress.ip_network(part, strict=False)
+                except ValueError:
+                    try:
+                        ipaddress.ip_address(part)
+                    except ValueError:
+                        raise ValueError(f"Invalid IP/CIDR: {part}")
+        return v
 
 
 class NATRuleResponse(BaseModel):

@@ -220,13 +220,26 @@ def apply_nat_rules():
                 ]
 
                 # Add source filter if specified
+                source_nets = []
                 if rule['source_network']:
-                    dnat_args.extend(['-s', str(rule['source_network'])])
+                    source_nets = [s.strip() for s in str(rule['source_network']).split(',') if s.strip()]
 
-                success, err = run_iptables(dnat_args)
-                if not success:
-                    errors.append(f"DNAT {rule['name']}: {err}")
-                    continue
+                if source_nets:
+                    # Create one DNAT rule per source IP/CIDR
+                    dnat_ok = True
+                    for src in source_nets:
+                        src_args = dnat_args + ['-s', src]
+                        success, err = run_iptables(src_args)
+                        if not success:
+                            errors.append(f"DNAT {rule['name']} src {src}: {err}")
+                            dnat_ok = False
+                    if not dnat_ok:
+                        continue
+                else:
+                    success, err = run_iptables(dnat_args)
+                    if not success:
+                        errors.append(f"DNAT {rule['name']}: {err}")
+                        continue
 
                 # FORWARD rule
                 forward_args = [

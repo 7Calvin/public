@@ -238,8 +238,16 @@ export const firewallApi = {
     source_network?: string
   }) => api.post('/firewall/nat', data),
 
-  updateNatRule: (id: string, data: Partial<{ name: string; is_active: boolean }>) =>
-    api.patch(`/firewall/nat/${id}`, data),
+  updateNatRule: (id: string, data: Partial<{
+    name: string
+    description: string
+    protocol: string
+    external_port: number
+    internal_ip: string
+    internal_port: number
+    source_network: string | null
+    is_active: boolean
+  }>) => api.patch(`/firewall/nat/${id}`, data),
 
   deleteNatRule: (id: string) => api.delete(`/firewall/nat/${id}`),
 }
@@ -354,6 +362,14 @@ export const proxyApi = {
   certificateDetails: (domain: string) => api.get(`/proxy/certificates/${domain}`),
 
   renewCertificate: (domain: string) => api.post(`/proxy/certificates/${domain}/renew`),
+
+  deleteCertificate: (domain: string) => api.delete(`/proxy/certificates/${domain}`),
+
+  // Management domain
+  getManagementDomain: () => api.get('/proxy/management-domain'),
+
+  updateManagementDomain: (data: { domain: string }) =>
+    api.put('/proxy/management-domain', data),
 }
 
 // ACME DNS-01 API

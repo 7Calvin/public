@@ -120,6 +120,7 @@ class Settings(BaseSettings):
 
     # ==================== Network ====================
     PUBLIC_INTERFACE: str = "eth0"
+    NAT_GATEWAY_NETWORK: str = ""  # Private subnet behind this host (e.g. 10.48.0.0/16)
 
     # CIDR notation for VPN network (derived from netmask)
     @computed_field

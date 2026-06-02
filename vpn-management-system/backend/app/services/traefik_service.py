@@ -432,14 +432,70 @@ class TraefikService:
 
     def _read_acme_storage(self) -> Optional[dict]:
         """Read and parse the Traefik acme.json file"""
+        import subprocess
+
+        # Try direct read first
         try:
-            if not os.path.exists(self.acme_storage):
-                return None
-            with open(self.acme_storage, "r") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, PermissionError, OSError) as e:
-            logger.error(f"Failed to read acme.json: {e}")
-            return None
+            if os.path.exists(self.acme_storage):
+                with open(self.acme_storage, "r") as f:
+                    return json.load(f)
+        except PermissionError:
+            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to read acme.json directly: {e}")
+
+        # Fallback: read via docker exec traefik (file is 600 root-owned)
+        try:
+            result = subprocess.run(
+                ["docker", "exec", "traefik", "cat", "/acme/acme.json"],
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout:
+                return json.loads(result.stdout)
+            logger.error(f"docker exec cat acme.json failed: {result.stderr.decode()}")
+        except Exception as e:
+            logger.error(f"Failed to read acme.json via docker exec: {e}")
+
+        return None
+
+    def _write_acme_storage(self, acme_data: dict) -> Tuple[bool, str]:
+        """Write acme.json - tries direct write first, falls back to docker exec"""
+        import subprocess
+
+        json_content = json.dumps(acme_data, indent=2)
+
+        # Try direct write first
+        try:
+            with open(self.acme_storage, "w") as f:
+                f.write(json_content)
+            return True, ""
+        except PermissionError:
+            pass
+
+        # Fallback: write via docker exec into traefik container
+        # The traefik container runs as root and has /acme mounted rw
+        # Must preserve 600 permissions or Traefik will reject the file
+        try:
+            result = subprocess.run(
+                [
+                    "docker", "exec", "-i", "traefik",
+                    "sh", "-c", "cat > /acme/acme.json && chmod 600 /acme/acme.json",
+                ],
+                input=json_content.encode(),
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                err = result.stderr.decode().strip()
+                return False, f"docker exec failed: {err}"
+            return True, ""
+        except FileNotFoundError:
+            return False, "docker CLI not available"
+        except subprocess.TimeoutExpired:
+            return False, "docker exec timed out"
+        except Exception as e:
+            return False, str(e)
 
     def _parse_certificate(self, cert_b64: str) -> Optional[dict]:
         """Parse a base64-encoded PEM certificate and extract metadata"""
@@ -673,43 +729,238 @@ class TraefikService:
 
     async def force_renew_certificate(self, domain: str) -> Tuple[bool, str]:
         """
-        Force certificate renewal by removing it from acme.json.
-        Traefik will automatically request a new one.
+        Force certificate renewal by removing it from storage.
+        - HTTP-01 certs (acme.json): removed so Traefik auto-requests a new one.
+        - DNS-01 certs (manual): removed so user can re-issue via DNS challenge.
         """
+        found_acme = False
+        found_manual = False
+
+        # 1) Try removing from acme.json (HTTP-01 certs)
         try:
             acme_data = self._read_acme_storage()
-            if not acme_data:
-                return False, "Cannot read acme.json"
+            if acme_data:
+                for resolver_name, resolver_data in acme_data.items():
+                    if not isinstance(resolver_data, dict):
+                        continue
+                    certs = resolver_data.get("Certificates", [])
+                    original_count = len(certs)
+                    resolver_data["Certificates"] = [
+                        c for c in certs
+                        if c.get("domain", {}).get("main") != domain
+                    ]
+                    if len(resolver_data["Certificates"]) < original_count:
+                        found_acme = True
 
-            found = False
-            for resolver_name, resolver_data in acme_data.items():
-                if not isinstance(resolver_data, dict):
-                    continue
+                if found_acme:
+                    ok, err = self._write_acme_storage(acme_data)
+                    if not ok:
+                        return False, f"Failed to write acme.json: {err}"
+        except Exception as e:
+            logger.error(f"Error removing cert from acme.json: {e}")
 
-                certs = resolver_data.get("Certificates", [])
-                original_count = len(certs)
+        # 2) Try removing manual DNS-01 cert
+        manual_cert_dir = Path(settings.ACME_CERTS_DIR) / domain
+        if manual_cert_dir.exists() and manual_cert_dir.is_dir():
+            import shutil
+            try:
+                shutil.rmtree(manual_cert_dir)
+                found_manual = True
+            except Exception as e:
+                logger.error(f"Failed to remove manual cert for {domain}: {e}")
+                return False, str(e)
 
-                # Filter out the certificate for this domain
-                resolver_data["Certificates"] = [
-                    c for c in certs
-                    if c.get("domain", {}).get("main") != domain
-                ]
+        if not found_acme and not found_manual:
+            return False, f"Certificate for '{domain}' not found"
 
-                if len(resolver_data["Certificates"]) < original_count:
-                    found = True
+        logger.info(f"Removed certificate for {domain} (acme={found_acme}, manual={found_manual})")
 
-            if not found:
-                return False, f"Certificate for '{domain}' not found"
+        # For HTTP-01 certs, trigger HTTPS request so Traefik re-issues
+        if found_acme:
+            import asyncio
+            async def _trigger_renewal():
+                try:
+                    async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+                        await client.get(f"https://{domain}/", follow_redirects=True)
+                except Exception:
+                    pass
+            asyncio.ensure_future(_trigger_renewal())
 
-            # Write back the modified acme.json
-            with open(self.acme_storage, "w") as f:
-                json.dump(acme_data, f, indent=2)
+            return True, (
+                f"Certificate for '{domain}' removed. "
+                "Traefik is re-issuing — it may take up to 30 seconds to appear."
+            )
 
-            logger.info(f"Removed certificate for {domain} from acme.json to force renewal")
-            return True, f"Certificate for '{domain}' removed. Traefik will auto-request a new one."
+        # DNS-01 manual cert was removed — user needs to re-issue
+        return True, (
+            f"DNS-01 certificate for '{domain}' removed. "
+            "Use the DNS challenge button to issue a new one."
+        )
+
+    async def delete_certificate(self, domain: str) -> Tuple[bool, str]:
+        """
+        Permanently delete a certificate from ACME storage and/or manual certs.
+        Unlike force_renew, this does NOT trigger auto-renewal.
+        """
+        found_acme = False
+        found_manual = False
+
+        # 1) Remove from ACME storage (HTTP-01 certs)
+        try:
+            acme_data = self._read_acme_storage()
+            if acme_data:
+                for resolver_name, resolver_data in acme_data.items():
+                    if not isinstance(resolver_data, dict):
+                        continue
+                    certs = resolver_data.get("Certificates", [])
+                    original_count = len(certs)
+                    resolver_data["Certificates"] = [
+                        c for c in certs
+                        if c.get("domain", {}).get("main") != domain
+                    ]
+                    if len(resolver_data["Certificates"]) < original_count:
+                        found_acme = True
+
+                if found_acme:
+                    ok, err = self._write_acme_storage(acme_data)
+                    if not ok:
+                        return False, f"Failed to write acme.json: {err}"
+        except Exception as e:
+            logger.error(f"Failed to remove cert from acme.json: {e}")
+            return False, str(e)
+
+        # 2) Remove manual DNS-01 cert files
+        manual_cert_dir = Path(settings.ACME_CERTS_DIR) / domain
+        if manual_cert_dir.exists() and manual_cert_dir.is_dir():
+            import shutil
+            try:
+                shutil.rmtree(manual_cert_dir)
+                found_manual = True
+            except Exception as e:
+                logger.error(f"Failed to remove manual cert for {domain}: {e}")
+                return False, str(e)
+
+        if not found_acme and not found_manual:
+            return False, f"Certificate for '{domain}' not found"
+
+        sources = []
+        if found_acme:
+            sources.append("ACME storage")
+        if found_manual:
+            sources.append("manual certificates")
+
+        msg = f"Certificate for '{domain}' deleted from {' and '.join(sources)}"
+        logger.info(msg)
+        return True, msg
+
+    # ==================== Management Domain ====================
+
+    COMPOSE_FILE = "/app/docker-compose.yml"
+
+    def get_management_domain(self) -> dict:
+        """Read the current management domain from docker-compose.yml labels"""
+        import re
+        domain = ""
+        ip = ""
+        ssl_enabled = False
+
+        try:
+            with open(self.COMPOSE_FILE, "r") as f:
+                content = f.read()
+
+            # Extract domain from frontend router rule: Host(`domain`)
+            match = re.search(
+                r'traefik\.http\.routers\.frontend\.rule=Host\(`([^`]+)`\)',
+                content,
+            )
+            if match:
+                domain = match.group(1)
+
+            # Extract IP from backend-ip router rule
+            match = re.search(
+                r'traefik\.http\.routers\.backend-ip\.rule=Host\(`([^`]+)`\)',
+                content,
+            )
+            if match:
+                ip = match.group(1)
+
+            # Check if SSL is enabled (certresolver present)
+            ssl_enabled = "tls.certresolver=letsencrypt" in content
+
+        except FileNotFoundError:
+            logger.warning("docker-compose.yml not found at %s", self.COMPOSE_FILE)
+        except Exception as e:
+            logger.error(f"Failed to read management domain: {e}")
+
+        return {"domain": domain, "ip": ip, "ssl_enabled": ssl_enabled}
+
+    def update_management_domain(self, new_domain: str) -> Tuple[bool, str]:
+        """Update the management domain in docker-compose.yml"""
+        import re
+        import subprocess
+
+        try:
+            with open(self.COMPOSE_FILE, "r") as f:
+                content = f.read()
+
+            # Find current domain from frontend router
+            match = re.search(
+                r'traefik\.http\.routers\.frontend\.rule=Host\(`([^`]+)`\)',
+                content,
+            )
+            if not match:
+                return False, "Could not find current domain in docker-compose.yml"
+
+            old_domain = match.group(1)
+            if old_domain == new_domain:
+                return True, "Domain is already set to this value"
+
+            # Replace all occurrences of old domain with new domain in labels
+            updated = content.replace(
+                f"Host(`{old_domain}`)",
+                f"Host(`{new_domain}`)",
+            )
+
+            # Also update VITE_API_URL if present
+            updated = updated.replace(
+                f"VITE_API_URL=https://{old_domain}",
+                f"VITE_API_URL=https://{new_domain}",
+            )
+
+            with open(self.COMPOSE_FILE, "w") as f:
+                f.write(updated)
+
+            logger.info(f"Management domain updated: {old_domain} -> {new_domain}")
+
+            # Try to trigger container recreation via docker CLI
+            try:
+                compose_dir = os.environ.get("COMPOSE_PROJECT_DIR", "/opt/vpn-management")
+                compose_file = os.path.join(compose_dir, "docker-compose.yml")
+                subprocess.Popen(
+                    [
+                        "docker", "compose",
+                        "-f", compose_file,
+                        "--project-directory", compose_dir,
+                        "up", "-d", "--no-deps", "--force-recreate",
+                        "vpn-backend", "vpn-frontend",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception as e:
+                logger.warning(f"Could not auto-restart services: {e}")
+                return True, (
+                    f"Domain updated from '{old_domain}' to '{new_domain}'. "
+                    "Run 'docker compose up -d' to apply."
+                )
+
+            return True, (
+                f"Domain updated from '{old_domain}' to '{new_domain}'. "
+                "Services are restarting..."
+            )
 
         except PermissionError:
-            return False, "Permission denied writing to acme.json"
+            return False, "Permission denied writing to docker-compose.yml"
         except Exception as e:
-            logger.error(f"Failed to force renew certificate: {e}")
+            logger.error(f"Failed to update management domain: {e}")
             return False, str(e)

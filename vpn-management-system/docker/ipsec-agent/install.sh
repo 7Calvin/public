@@ -32,6 +32,22 @@ else
     ipsec version | head -1
 fi
 
+# Ensure minimal ipsec.conf exists so StrongSwan can start
+if [ ! -f /etc/ipsec.conf ]; then
+    echo "Creating minimal /etc/ipsec.conf..."
+    cat > /etc/ipsec.conf << 'IPSECCONF'
+# ipsec.conf - StrongSwan IPsec configuration
+# This file will be managed by VPN Management System
+config setup
+IPSECCONF
+fi
+
+if [ ! -f /etc/ipsec.secrets ]; then
+    echo "Creating minimal /etc/ipsec.secrets..."
+    touch /etc/ipsec.secrets
+    chmod 600 /etc/ipsec.secrets
+fi
+
 # Enable StrongSwan service
 systemctl enable strongswan-starter
 systemctl start strongswan-starter || true

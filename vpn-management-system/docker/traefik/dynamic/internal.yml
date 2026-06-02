@@ -3,6 +3,12 @@
 
 http:
   middlewares:
+    # HTTP to HTTPS redirect (used by Docker label routers)
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
     # Security headers
     security-headers:
       headers:
@@ -26,12 +32,9 @@ http:
         average: 100
         burst: 50
 
-# Default TLS store with self-signed fallback
-# (overridden by Let's Encrypt when available)
-tls:
-  stores:
-    default:
-      defaultGeneratedCert:
-        resolver: letsencrypt
-        domain:
-          main: "localhost"
+    # HTTP → HTTPS redirect (applied only to domain-specific routers,
+    # so that IP-based HTTP access keeps working without redirect)
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true

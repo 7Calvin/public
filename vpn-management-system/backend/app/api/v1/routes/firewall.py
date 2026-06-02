@@ -389,16 +389,18 @@ async def toggle_quick_rule(
             network = ipaddress.ip_network(f"{vpn_net}/{vpn_mask}", strict=False)
             vpn_network = str(network)
 
-        # For allow-internal-network, use push_routes from server config
+        # For allow-internal-network, determine which networks to allow.
+        # Priority: push_routes from VPN settings > NAT_GATEWAY_NETWORK from .env > all RFC1918
         internal_networks = None
         if rule_key == "allow-internal-network":
             push_routes = server_config.get("push_routes", [])
             if push_routes:
-                # Use first route as destination (or join them if multiple)
                 internal_networks = ",".join(push_routes)
+            elif settings.NAT_GATEWAY_NETWORK:
+                internal_networks = settings.NAT_GATEWAY_NETWORK
             else:
-                # Fallback to default if no routes configured
-                internal_networks = "192.168.0.0/16"
+                # Fallback: allow all RFC1918 private networks
+                internal_networks = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
         new_rule = FirewallRule(
             name=rule_def["name"],

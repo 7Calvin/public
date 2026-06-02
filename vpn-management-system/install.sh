@@ -382,7 +382,83 @@ install_strongswan() {
         log_warn "No StrongSwan systemd unit found; skipping (IPsec optional)"
     fi
 
+    # Create MSS clamping + UFW route leftupdown script
+    # This script is called by StrongSwan when tunnels go up/down
+    # It handles: MSS clamping (prevents TCP fragmentation in ESP tunnel)
+    #             UFW route rules (allows forwarding between VPN subnets)
+    mkdir -p /etc/ipsec.d
+    cat > /etc/ipsec.d/mss-clamp.sh << 'MSSEOF'
+#!/bin/bash
+# =============================================================
+# StrongSwan leftupdown script - MSS Clamping + Firewall Rules
+# Called automatically when IPsec tunnels go up/down
+#
+# Solves: TCP packets > ~1422 bytes being dropped in ESP tunnel
+#         (e.g. RDP/NLA/CredSSP authentication failures)
+#
+# StrongSwan provides these environment variables:
+#   PLUTO_VERB:        up-client, down-client, etc.
+#   PLUTO_PEER_CLIENT: remote subnet (e.g., 192.168.0.0/24)
+#   PLUTO_MY_CLIENT:   local subnet (e.g., 10.110.0.0/16)
+# =============================================================
+
+# MSS value: 1360 allows for ESP overhead on interfaces with
+# MTU 9001 (AWS jumbo) or standard 1500 MTU
+MSS_VALUE=1360
+
+case "$PLUTO_VERB" in
+    up-client)
+        # --- MSS Clamping: FORWARD chain (routed traffic through tunnel) ---
+        # Uses IPsec policy match - only affects packets in active SAs
+        # Check before adding to avoid duplicates from multiple tunnels
+        if ! iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN \
+            -m policy --pol ipsec --dir in -j TCPMSS --set-mss $MSS_VALUE 2>/dev/null; then
+            iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN \
+                -m policy --pol ipsec --dir in -j TCPMSS --set-mss $MSS_VALUE
+        fi
+        if ! iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN \
+            -m policy --pol ipsec --dir out -j TCPMSS --set-mss $MSS_VALUE 2>/dev/null; then
+            iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN \
+                -m policy --pol ipsec --dir out -j TCPMSS --set-mss $MSS_VALUE
+        fi
+
+        # --- MSS Clamping: OUTPUT chain (traffic from this host to remote) ---
+        if ! iptables -t mangle -C OUTPUT -p tcp --tcp-flags SYN,RST SYN \
+            -d "$PLUTO_PEER_CLIENT" -j TCPMSS --set-mss $MSS_VALUE 2>/dev/null; then
+            iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN \
+                -d "$PLUTO_PEER_CLIENT" -j TCPMSS --set-mss $MSS_VALUE
+        fi
+
+        # --- MSS Clamping: INPUT chain (traffic from remote to this host) ---
+        if ! iptables -t mangle -C INPUT -p tcp --tcp-flags SYN,RST SYN \
+            -s "$PLUTO_PEER_CLIENT" -j TCPMSS --set-mss $MSS_VALUE 2>/dev/null; then
+            iptables -t mangle -A INPUT -p tcp --tcp-flags SYN,RST SYN \
+                -s "$PLUTO_PEER_CLIENT" -j TCPMSS --set-mss $MSS_VALUE
+        fi
+
+        # --- UFW route rules (allow forwarding between VPN subnets) ---
+        if command -v ufw >/dev/null 2>&1; then
+            ufw route allow from "$PLUTO_MY_CLIENT" to "$PLUTO_PEER_CLIENT" 2>/dev/null || true
+            ufw route allow from "$PLUTO_PEER_CLIENT" to "$PLUTO_MY_CLIENT" 2>/dev/null || true
+        fi
+        ;;
+
+    down-client)
+        # Remove subnet-specific MSS rules (OUTPUT/INPUT)
+        iptables -t mangle -D OUTPUT -p tcp --tcp-flags SYN,RST SYN \
+            -d "$PLUTO_PEER_CLIENT" -j TCPMSS --set-mss $MSS_VALUE 2>/dev/null || true
+        iptables -t mangle -D INPUT -p tcp --tcp-flags SYN,RST SYN \
+            -s "$PLUTO_PEER_CLIENT" -j TCPMSS --set-mss $MSS_VALUE 2>/dev/null || true
+        # Note: FORWARD rules with policy match are kept (safe for other tunnels,
+        # harmless when no tunnels active since -m policy only matches IPsec SAs)
+        # Note: UFW route rules are kept (persistent, needed if tunnel reconnects)
+        ;;
+esac
+MSSEOF
+    chmod +x /etc/ipsec.d/mss-clamp.sh
+
     log_success "StrongSwan configured"
+    log_success "MSS clamping script created at /etc/ipsec.d/mss-clamp.sh"
 }
 
 install_ipsec_agent() {
@@ -466,6 +542,34 @@ install_docker() {
     log_success "Docker installed: $(docker --version)"
 }
 
+configure_ipsec_sysctl() {
+    # Ensure sysctl settings for IPsec are in place (idempotent)
+    # Can be called from both fresh install and upgrade paths
+    cat > /etc/sysctl.d/99-vpn-ipsec.conf << 'SYSEOF'
+# VPN Management System - IP forwarding and IPsec tweaks
+net.ipv4.ip_forward=1
+
+# Disable reverse path filtering for IPsec
+# Required: packets arriving from IPsec tunnel have source IPs
+# from remote subnets, which would fail rp_filter strict mode
+net.ipv4.conf.all.rp_filter=0
+net.ipv4.conf.default.rp_filter=0
+
+# Accept redirects (needed for some IPsec routing scenarios)
+net.ipv4.conf.all.accept_redirects=1
+net.ipv4.conf.all.send_redirects=1
+SYSEOF
+    sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+    sysctl --system > /dev/null 2>&1
+
+    # Allow ESP protocol through UFW
+    if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+        ufw allow proto esp from any to any comment 'IPsec ESP' 2>/dev/null || true
+    fi
+
+    log_success "IPsec sysctl settings applied (ip_forward=1, rp_filter=0)"
+}
+
 configure_firewall() {
     log_info "Configuring firewall..."
 
@@ -492,10 +596,8 @@ configure_firewall() {
     ufw allow from 172.17.0.0/16 to any port 8101 comment 'IPsec Agent'
     ufw allow from 172.20.0.0/16 to any port 8101 comment 'IPsec Agent VPN Network'
 
-    # Enable IP forwarding persistently. Use a drop-in under /etc/sysctl.d/
-    # because /etc/sysctl.conf no longer exists on newer distros (Ubuntu 24.04+).
-    echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-vpn-forward.conf
-    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+    # Enable IP forwarding + IPsec sysctl tweaks + ESP protocol
+    configure_ipsec_sysctl
 
     log_success "Firewall configured"
 }
@@ -715,27 +817,41 @@ ${POSTGRES_SERVICE}
       - TRAEFIK_API_URL=http://traefik:8080
       - TRAEFIK_ACME_EMAIL=\${TRAEFIK_ACME_EMAIL}
       - ACME_STAGING=\${ACME_STAGING:-false}
+      - COMPOSE_PROJECT_DIR=${INSTALL_DIR}
     depends_on:
       ${POSTGRES_DEPENDS:+- $POSTGRES_DEPENDS}
       - redis
     labels:
       - "traefik.enable=true"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      # HTTPS router for domain (with Let's Encrypt cert)
       - "traefik.http.routers.backend.rule=Host(\`\${DOMAIN}\`) && (PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`))"
       - "traefik.http.routers.backend.entrypoints=websecure"
       - "traefik.http.routers.backend.tls=true"
       - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.backend.priority=10"
-      - "traefik.http.services.backend.loadbalancer.server.port=8000"
-      - "traefik.http.routers.backend-http.rule=Host(\`\${DOMAIN}\`) && (PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`))"
+      - "traefik.http.routers.backend.priority=20"
+      # HTTPS fallback for IP access (self-signed cert)
+      - "traefik.http.routers.backend-ip.rule=PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`)"
+      - "traefik.http.routers.backend-ip.entrypoints=websecure"
+      - "traefik.http.routers.backend-ip.tls=true"
+      - "traefik.http.routers.backend-ip.priority=10"
+      # HTTP fallback for IP access (no redirect)
+      - "traefik.http.routers.backend-http.rule=PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`)"
       - "traefik.http.routers.backend-http.entrypoints=web"
       - "traefik.http.routers.backend-http.priority=10"
+      # HTTP router for domain (redirect to HTTPS)
+      - "traefik.http.routers.backend-http-domain.rule=Host(\`\${DOMAIN}\`) && (PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`))"
+      - "traefik.http.routers.backend-http-domain.entrypoints=web"
+      - "traefik.http.routers.backend-http-domain.middlewares=https-redirect@file"
+      - "traefik.http.routers.backend-http-domain.priority=20"
     volumes:
       - ${INSTALL_DIR}/data/openvpn:/etc/openvpn
       - ${INSTALL_DIR}/logs:/var/log/vpn-management
       - ${INSTALL_DIR}/data/backend:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${INSTALL_DIR}/docker-compose.yml:/app/docker-compose.yml
       - traefik_dynamic:/etc/traefik/dynamic
-      - traefik_acme:/acme:ro
+      - traefik_acme:/acme
       - traefik_certs_manual:/certs/manual
     networks:
       - vpn-network
@@ -755,15 +871,27 @@ ${POSTGRES_SERVICE}
       - VITE_API_URL=https://\${DOMAIN}/api
     labels:
       - "traefik.enable=true"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      # HTTPS router for domain (with Let's Encrypt cert)
       - "traefik.http.routers.frontend.rule=Host(\`\${DOMAIN}\`) && PathPrefix(\`/\`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls=true"
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.frontend.priority=1"
-      - "traefik.http.services.frontend.loadbalancer.server.port=80"
-      - "traefik.http.routers.frontend-http.rule=Host(\`\${DOMAIN}\`) && PathPrefix(\`/\`)"
+      - "traefik.http.routers.frontend.priority=2"
+      # HTTPS fallback for IP access (self-signed cert)
+      - "traefik.http.routers.frontend-ip.rule=PathPrefix(\`/\`)"
+      - "traefik.http.routers.frontend-ip.entrypoints=websecure"
+      - "traefik.http.routers.frontend-ip.tls=true"
+      - "traefik.http.routers.frontend-ip.priority=1"
+      # HTTP fallback for IP access (no redirect)
+      - "traefik.http.routers.frontend-http.rule=PathPrefix(\`/\`)"
       - "traefik.http.routers.frontend-http.entrypoints=web"
       - "traefik.http.routers.frontend-http.priority=1"
+      # HTTP router for domain (redirect to HTTPS)
+      - "traefik.http.routers.frontend-http-domain.rule=Host(\`\${DOMAIN}\`) && PathPrefix(\`/\`)"
+      - "traefik.http.routers.frontend-http-domain.entrypoints=web"
+      - "traefik.http.routers.frontend-http-domain.middlewares=https-redirect@file"
+      - "traefik.http.routers.frontend-http-domain.priority=2"
     networks:
       - vpn-network
 
@@ -1029,6 +1157,21 @@ print_summary() {
     echo "  Data dir:      ${INSTALL_DIR}/data"
     echo "  Logs dir:      ${INSTALL_DIR}/logs"
     echo
+    echo -e "${CYAN}IPsec (Site-to-Site VPN):${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  MSS Clamping:  /etc/ipsec.d/mss-clamp.sh (auto on tunnel up/down)"
+    echo "  IP Forward:    enabled (net.ipv4.ip_forward=1)"
+    echo "  rp_filter:     disabled (required for IPsec routing)"
+    echo "  UFW routes:    auto-configured per tunnel via leftupdown"
+    echo
+    echo -e "${YELLOW}AWS EC2 - Required manual steps for IPsec:${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  1. Disable Source/Destination Check on the gateway EC2 instance:"
+    echo "     EC2 Console > Instance > Actions > Networking > Change source/dest check > Stop"
+    echo "  2. Add Security Group inbound rules for the remote VPN subnet:"
+    echo "     Allow traffic from remote_subnet CIDR (e.g. 192.168.0.0/24)"
+    echo "     Ports: as needed (RDP 3389, SSH 22, ICMP, etc.)"
+    echo
 }
 
 # ==================== Upgrade Functions ====================
@@ -1099,6 +1242,7 @@ run_upgrade_steps() {
             rsync -a --delete "${SCRIPT_DIR}/docker/" "${INSTALL_DIR}/docker/" >>"$UPGRADE_LOG" 2>&1
             run_step 35 "Updating Traefik configuration..." create_traefik_config
             run_step 40 "Updating StrongSwan..." install_strongswan
+            run_step 45 "Configuring IPsec sysctl..." configure_ipsec_sysctl
             echo 50; echo "XXX"; echo "Updating IPsec Agent..."; echo "XXX"
             IPSEC_AGENT_DIR="/opt/vpn-management/ipsec-agent"
             if [ -d "$IPSEC_AGENT_DIR" ]; then
@@ -1160,6 +1304,7 @@ run_upgrade_steps() {
 
         log_info "Updating StrongSwan and IPsec Agent..."
         install_strongswan
+        configure_ipsec_sysctl
 
         IPSEC_AGENT_DIR="/opt/vpn-management/ipsec-agent"
         if [ -d "$IPSEC_AGENT_DIR" ]; then

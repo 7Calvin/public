@@ -246,44 +246,59 @@ Para que o NAT funcione corretamente, você DEVE:
 4. **Security Groups da subnet privada**:
    - Permitir tráfego da rede VPN (10.8.0.0/24) nas portas desejadas
 
-### Quick Start (Produção)
+### Quick Start
 
 ```bash
-# 1. Clone o repositório
-git clone https://github.com/7Calvin/public.git
-cd public/vpn-management-system
+# Clone o repositório
+git clone <repo-url>
+cd vpn-management-system
 
-# 2. (Opcional) Copie e ajuste as variáveis de ambiente
+# Configure variáveis de ambiente
 cp .env.example .env
-nano .env  # Edite senhas, domínio, etc.
+nano .env  # Edite as configurações
 
-# 3. Execute o instalador interativo (como root)
-sudo ./install.sh
-```
-
-O instalador cuida de tudo: instala Docker, StrongSwan, configura firewall, gera certificados e sobe os containers. Ele pergunta interativamente todas as configurações (domínio, credenciais, rede VPN, SSL).
-
-> **Nota:** O `.env.example` contém todas as variáveis disponíveis com valores de exemplo. O `install.sh` gera o `.env` automaticamente com as respostas do wizard, então o passo 2 é opcional.
-
-### Quick Start (Desenvolvimento)
-
-```bash
-git clone https://github.com/7Calvin/public.git
-cd public/vpn-management-system
-
-cp .env.example .env
-nano .env  # Ajuste para ambiente local
-
+# Inicie os containers
 docker-compose up -d
-# Acesse http://localhost
+
+# Verifique os logs
+docker-compose logs -f backend
+
+# Acesse
+# http://localhost (desenvolvimento)
+# https://seu-dominio.com (produção)
 ```
 
-### Instalação em Produção (detalhado)
+### Variáveis de Ambiente Importantes
+
+```env
+# Admin inicial
+INITIAL_ADMIN_USERNAME=admin
+INITIAL_ADMIN_PASSWORD=SuaSenhaForte123!
+INITIAL_ADMIN_EMAIL=admin@example.com
+
+# Banco de dados
+POSTGRES_USER=vpn_admin
+POSTGRES_PASSWORD=senha_segura
+POSTGRES_DB=vpn_management
+
+# JWT
+JWT_SECRET_KEY=sua_chave_secreta_muito_longa
+
+# OpenVPN
+OPENVPN_HOST=vpn.seudominio.com
+OPENVPN_PORT=1194
+OPENVPN_NETWORK=10.8.0.0
+OPENVPN_NETMASK=255.255.255.0
+```
+
+### Instalação em Produção
 
 ```bash
-# Clone e execute
-git clone https://github.com/7Calvin/public.git
-cd public/vpn-management-system
+# Clone o repositório
+git clone https://github.com/7Calvin/vpn-management-system.git
+cd vpn-management-system
+
+# Execute o instalador interativo
 sudo ./install.sh
 ```
 

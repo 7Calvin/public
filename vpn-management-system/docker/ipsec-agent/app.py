@@ -180,7 +180,7 @@ def statusall():
 
 @app.route('/logs', methods=['GET'])
 def get_logs():
-    """Get recent IPsec/StrongSwan logs"""
+    """Get recent IPsec/StrongSwan logs from journalctl (charon + strongswan-starter)"""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
 
@@ -188,61 +188,50 @@ def get_logs():
     connection = request.args.get('connection', None)
 
     try:
-        # Build grep pattern for specific connection
-        grep_cmd = []
-        if connection:
-            grep_cmd = ['grep', '-E', f'({connection}|charon|ipsec)', '--color=never']
+        max_lines = int(lines)
 
-        # Try journalctl first (systemd)
-        journal_cmd = ['journalctl', '-u', 'strongswan-starter', '-n', lines, '--no-pager']
+        journal_cmd = [
+            'journalctl',
+            '-t', 'charon',
+            '-t', 'ipsec',
+            '-t', 'ipsec_starter',
+            '--no-pager',
+            '-n', str(max_lines * 3 if connection else max_lines),
+        ]
 
-        if connection:
-            # Get more lines and filter for specific connection
-            journal_cmd = ['journalctl', '-u', 'strongswan-starter', '-n', '500', '--no-pager']
-            result = subprocess.run(
-                journal_cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            if result.returncode == 0:
-                # Filter logs for this connection
-                filtered_lines = []
-                for line in result.stdout.split('\n'):
-                    if connection.lower() in line.lower() or 'error' in line.lower() or 'failed' in line.lower():
-                        filtered_lines.append(line)
-                # Get last N lines
-                filtered_logs = '\n'.join(filtered_lines[-int(lines):])
-                if filtered_logs.strip():
-                    return jsonify({
-                        'success': True,
-                        'logs': filtered_logs,
-                        'source': f'journalctl (filtered: {connection})',
-                        'connection': connection
-                    })
-                else:
-                    return jsonify({
-                        'success': True,
-                        'logs': f'No logs found for connection "{connection}"',
-                        'source': 'journalctl',
-                        'connection': connection
-                    })
-        else:
-            result = subprocess.run(
-                journal_cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+        result = subprocess.run(
+            journal_cmd,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
 
-            if result.returncode == 0 and result.stdout.strip():
+        if result.returncode == 0 and result.stdout.strip():
+            log_lines = result.stdout.strip().split('\n')
+
+            if connection:
+                conn_lower = connection.lower()
+                filtered = [
+                    line for line in log_lines
+                    if conn_lower in line.lower()
+                    or 'error' in line.lower()
+                    or 'failed' in line.lower()
+                ]
+                log_output = '\n'.join(filtered[-max_lines:])
+                source = f'journalctl (filtered: {connection})'
+            else:
+                log_output = '\n'.join(log_lines[-max_lines:])
+                source = 'journalctl'
+
+            if log_output.strip():
                 return jsonify({
                     'success': True,
-                    'logs': result.stdout,
-                    'source': 'journalctl'
+                    'logs': log_output,
+                    'source': source,
+                    'connection': connection
                 })
 
-        # Fallback: try charon log
+        # Fallback: try log files directly
         log_paths = [
             '/var/log/charon.log',
             '/var/log/strongswan.log',
@@ -252,29 +241,32 @@ def get_logs():
         for log_path in log_paths:
             try:
                 result = subprocess.run(
-                    ['tail', '-n', lines, log_path],
+                    ['tail', '-n', str(max_lines * 3 if connection else max_lines), log_path],
                     capture_output=True,
                     text=True,
                     timeout=10
                 )
                 if result.returncode == 0 and result.stdout.strip():
-                    logs = result.stdout
+                    log_lines = result.stdout.strip().split('\n')
                     if connection:
-                        filtered_lines = [l for l in logs.split('\n') if connection.lower() in l.lower()]
-                        logs = '\n'.join(filtered_lines[-int(lines):])
-                    return jsonify({
-                        'success': True,
-                        'logs': logs,
-                        'source': log_path,
-                        'connection': connection
-                    })
+                        conn_lower = connection.lower()
+                        log_lines = [l for l in log_lines if conn_lower in l.lower()]
+                    log_output = '\n'.join(log_lines[-max_lines:])
+                    if log_output.strip():
+                        return jsonify({
+                            'success': True,
+                            'logs': log_output,
+                            'source': log_path,
+                            'connection': connection
+                        })
             except Exception:
                 continue
 
         return jsonify({
-            'success': False,
-            'logs': 'No logs found',
-            'source': None
+            'success': True,
+            'logs': f'No logs found{" for connection " + connection if connection else ""}',
+            'source': None,
+            'connection': connection
         })
 
     except subprocess.TimeoutExpired:

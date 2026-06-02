@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { formatDate } from '@/lib/utils'
-import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server } from 'lucide-react'
+import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server, Pencil } from 'lucide-react'
 import type { FirewallRule } from '@/types'
 
 interface QuickRuleStatus {
@@ -55,16 +55,19 @@ interface NewDNATForm {
   external_port: string
   internal_ip: string
   internal_port: string
+  source_network: string
 }
 
-const QUICK_RULE_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+const QUICK_RULE_CONFIG: Record<string, { label: string; subtitle: string; icon: React.ElementType; color: string }> = {
   'block-client-to-client': {
     label: 'Block Client-to-Client',
+    subtitle: 'Prevent VPN clients from reaching each other',
     icon: Users,
     color: 'text-red-500',
   },
   'allow-internal-network': {
-    label: 'Allow Internal Communications',
+    label: 'Allow Private Network Access',
+    subtitle: 'Let VPN clients reach the private subnet behind this server',
     icon: Network,
     color: 'text-green-500',
   },
@@ -119,6 +122,7 @@ const initialDNATFormState: NewDNATForm = {
   external_port: '',
   internal_ip: '',
   internal_port: '',
+  source_network: '*',
 }
 
 export default function FirewallPage() {
@@ -129,6 +133,9 @@ export default function FirewallPage() {
   const [isDNATModalOpen, setIsDNATModalOpen] = useState(false)
   const [newRule, setNewRule] = useState<NewRuleForm>(initialFormState)
   const [newDNAT, setNewDNAT] = useState<NewDNATForm>(initialDNATFormState)
+  const [isEditDNATModalOpen, setIsEditDNATModalOpen] = useState(false)
+  const [editingDNAT, setEditingDNAT] = useState<NATRule | null>(null)
+  const [editDNATForm, setEditDNATForm] = useState<NewDNATForm>(initialDNATFormState)
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ['firewall-rules'],
@@ -246,6 +253,7 @@ export default function FirewallPage() {
 
   const createDNATMutation = useMutation({
     mutationFn: (data: NewDNATForm) => {
+      const sourceNet = data.source_network.trim()
       return firewallApi.createNatRule({
         name: data.name,
         description: data.description || undefined,
@@ -253,6 +261,7 @@ export default function FirewallPage() {
         external_port: parseInt(data.external_port),
         internal_ip: data.internal_ip,
         internal_port: parseInt(data.internal_port),
+        source_network: (sourceNet && sourceNet !== '*') ? sourceNet : undefined,
       })
     },
     onSuccess: async () => {
@@ -298,6 +307,58 @@ export default function FirewallPage() {
       toast({ variant: 'destructive', title: 'Failed to delete rule' })
     },
   })
+
+  const updateDNATMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      firewallApi.updateNatRule(id, data),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['nat-rules'] })
+      queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
+      toast({ title: 'NAT rule updated' })
+      setIsEditDNATModalOpen(false)
+      setEditingDNAT(null)
+      await applyRulesAfterChange()
+    },
+    onError: (error: Error & { response?: { data?: { detail?: string } } }) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update rule',
+        description: error.response?.data?.detail || 'Unknown error',
+      })
+    },
+  })
+
+  const openEditDNAT = (rule: NATRule) => {
+    setEditingDNAT(rule)
+    setEditDNATForm({
+      name: rule.name,
+      description: rule.description || '',
+      protocol: rule.protocol,
+      external_port: String(rule.external_port),
+      internal_ip: rule.internal_ip,
+      internal_port: String(rule.internal_port),
+      source_network: rule.source_network || '*',
+    })
+    setIsEditDNATModalOpen(true)
+  }
+
+  const handleEditDNAT = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingDNAT) return
+    const sourceNet = editDNATForm.source_network.trim()
+    updateDNATMutation.mutate({
+      id: editingDNAT.id,
+      data: {
+        name: editDNATForm.name,
+        description: editDNATForm.description || null,
+        protocol: editDNATForm.protocol,
+        external_port: parseInt(editDNATForm.external_port),
+        internal_ip: editDNATForm.internal_ip,
+        internal_port: parseInt(editDNATForm.internal_port),
+        source_network: (sourceNet && sourceNet !== '*') ? sourceNet : null,
+      },
+    })
+  }
 
   const ruleList: FirewallRule[] = Array.isArray(rules) ? rules : rules?.items || []
   const sortedRules = [...ruleList].sort((a, b) => a.priority - b.priority)
@@ -408,8 +469,10 @@ export default function FirewallPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Firewall</h1>
-          <p className="text-muted-foreground">Manage firewall rules and port forwarding</p>
+          <h1 className="text-3xl font-bold">OpenVPN Firewall</h1>
+          <p className="text-muted-foreground">
+            Controls traffic rules for VPN clients on this server. Rules are applied inside the OpenVPN container.
+          </p>
         </div>
       </div>
 
@@ -456,7 +519,7 @@ export default function FirewallPage() {
             <Zap className="h-5 w-5" />
             Quick Rules
           </CardTitle>
-          <CardDescription>Toggle common firewall rules with one click</CardDescription>
+          <CardDescription>Toggle common OpenVPN firewall rules with one click</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
@@ -477,7 +540,7 @@ export default function FirewallPage() {
                     <div className="min-w-0">
                       <p className="font-medium text-sm">{config.label}</p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {ruleStatus?.description || 'Loading...'}
+                        {config.subtitle}
                       </p>
                     </div>
                   </div>
@@ -512,7 +575,7 @@ export default function FirewallPage() {
               <Server className="h-5 w-5" />
               Port Forwarding (DNAT)
             </CardTitle>
-            <CardDescription>Forward external ports to internal servers on the private network</CardDescription>
+          <CardDescription>Forward external ports on this server to internal hosts on the private network (DNAT via NAT agent)</CardDescription>
           </div>
           <Button onClick={() => setIsDNATModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
@@ -538,7 +601,7 @@ export default function FirewallPage() {
                 <thead className="text-xs uppercase text-muted-foreground border-b">
                   <tr>
                     <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Description</th>
+                    <th className="px-4 py-3 text-left">Source</th>
                     <th className="px-4 py-3 text-left">External Port</th>
                     <th className="px-4 py-3 text-left"></th>
                     <th className="px-4 py-3 text-left">Internal Destination</th>
@@ -550,9 +613,14 @@ export default function FirewallPage() {
                 <tbody>
                   {natRuleList.map((rule) => (
                     <tr key={rule.id} className="border-b hover:bg-muted/50">
-                      <td className="px-4 py-3 font-medium">{rule.name}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {rule.description || '-'}
+                      <td className="px-4 py-3">
+                        <p className="font-medium">{rule.name}</p>
+                        {rule.description && (
+                          <p className="text-xs text-muted-foreground">{rule.description}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">
+                        {rule.source_network || <span className="text-muted-foreground">Any (*)</span>}
                       </td>
                       <td className="px-4 py-3 font-mono">{rule.external_port}</td>
                       <td className="px-4 py-3">
@@ -577,14 +645,25 @@ export default function FirewallPage() {
                         </button>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteNATMutation.mutate(rule.id)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditDNAT(rule)}
+                            title="Edit rule"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteNATMutation.mutate(rule.id)}
+                            className="text-destructive hover:text-destructive"
+                            title="Delete rule"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -600,7 +679,7 @@ export default function FirewallPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Firewall Rules</CardTitle>
-            <CardDescription>{ruleList.length} rules total - drag rows to reorder</CardDescription>
+            <CardDescription>{ruleList.length} rules applied to VPN traffic - drag rows to reorder priority</CardDescription>
           </div>
           <Button onClick={() => setIsAddModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
@@ -873,6 +952,19 @@ export default function FirewallPage() {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="dnat-source">Allowed Source IPs</Label>
+              <Input
+                id="dnat-source"
+                value={newDNAT.source_network}
+                onChange={(e) => setNewDNAT({ ...newDNAT, source_network: e.target.value })}
+                placeholder="* (any)"
+              />
+              <p className="text-xs text-muted-foreground">
+                Use <code className="px-1 bg-muted rounded">*</code> for any source, or specify IP/CIDR (e.g. <code className="px-1 bg-muted rounded">203.0.113.10</code> or <code className="px-1 bg-muted rounded">10.0.0.0/24</code>)
+              </p>
+            </div>
+
             <div className="p-4 bg-muted/50 rounded-lg space-y-4">
               <div className="flex items-center gap-4">
                 <div className="flex-1 space-y-2">
@@ -930,6 +1022,107 @@ export default function FirewallPage() {
               </Button>
               <Button type="submit" disabled={createDNATMutation.isPending}>
                 {createDNATMutation.isPending ? 'Creating...' : 'Create Forwarding Rule'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit DNAT Modal */}
+      <Dialog open={isEditDNATModalOpen} onOpenChange={setIsEditDNATModalOpen}>
+        <DialogContent onClose={() => setIsEditDNATModalOpen(false)} className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Edit Port Forwarding Rule</DialogTitle>
+            <DialogDescription>
+              Modify the port forwarding configuration.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditDNAT} className="space-y-4 mt-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-dnat-name">Rule Name *</Label>
+                <Input
+                  id="edit-dnat-name"
+                  value={editDNATForm.name}
+                  onChange={(e) => setEditDNATForm({ ...editDNATForm, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-dnat-protocol">Protocol</Label>
+                <Select
+                  id="edit-dnat-protocol"
+                  value={editDNATForm.protocol}
+                  onChange={(e) => setEditDNATForm({ ...editDNATForm, protocol: e.target.value })}
+                  options={DNAT_PROTOCOL_OPTIONS}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-dnat-description">Description</Label>
+              <Input
+                id="edit-dnat-description"
+                value={editDNATForm.description}
+                onChange={(e) => setEditDNATForm({ ...editDNATForm, description: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-dnat-source">Allowed Source IPs</Label>
+              <Input
+                id="edit-dnat-source"
+                value={editDNATForm.source_network}
+                onChange={(e) => setEditDNATForm({ ...editDNATForm, source_network: e.target.value })}
+                placeholder="* (any)"
+              />
+              <p className="text-xs text-muted-foreground">
+                Use <code className="px-1 bg-muted rounded">*</code> for any source, or specify IP/CIDR
+              </p>
+            </div>
+
+            <div className="p-4 bg-muted/50 rounded-lg space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="edit-external-port">External Port *</Label>
+                  <Input
+                    id="edit-external-port"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={editDNATForm.external_port}
+                    onChange={(e) => setEditDNATForm({ ...editDNATForm, external_port: e.target.value })}
+                  />
+                </div>
+                <ArrowRight className="h-6 w-6 text-muted-foreground mt-2" />
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="edit-internal-ip">Internal IP *</Label>
+                  <Input
+                    id="edit-internal-ip"
+                    value={editDNATForm.internal_ip}
+                    onChange={(e) => setEditDNATForm({ ...editDNATForm, internal_ip: e.target.value })}
+                  />
+                </div>
+                <div className="w-24 space-y-2">
+                  <Label htmlFor="edit-internal-port">Port *</Label>
+                  <Input
+                    id="edit-internal-port"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={editDNATForm.internal_port}
+                    onChange={(e) => setEditDNATForm({ ...editDNATForm, internal_port: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="mt-6">
+              <Button type="button" variant="outline" onClick={() => setIsEditDNATModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateDNATMutation.isPending}>
+                {updateDNATMutation.isPending ? 'Saving...' : 'Save Changes'}
               </Button>
             </DialogFooter>
           </form>

@@ -193,17 +193,42 @@ class ProxyRouteResponse(BaseModel):
 
 
 class ProxyRouteListResponse(BaseModel):
-    """Proxy route list item"""
+    """Proxy route list item (full details for edit support)"""
     id: UUID
     name: str
     hostname: str
     backend_url: str
+
+    path_prefix: Optional[str]
+    strip_prefix: bool
+
     ssl_mode: SSLMode
+    force_https: bool
+
+    health_check_type: HealthCheckType
+    health_check_path: Optional[str]
+    health_check_interval: Optional[str]
+
+    pass_host_header: bool
+    custom_request_headers: Optional[str]
+    custom_response_headers: Optional[str]
+
+    rate_limit_average: Optional[int]
+    rate_limit_burst: Optional[int]
+
     status: ProxyRouteStatus
     is_enabled: bool
+
+    last_health_check: Optional[datetime]
     last_health_status: Optional[bool]
     last_error: Optional[str]
+
+    ssl_certificate_expiry: Optional[datetime]
+    ssl_certificate_issuer: Optional[str]
+
     created_at: datetime
+    updated_at: Optional[datetime]
+    created_by_id: Optional[UUID]
 
     class Config:
         from_attributes = True

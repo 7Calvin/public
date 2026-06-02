@@ -27,6 +27,8 @@ import {
   Copy,
   Loader2,
   FileKey,
+  Server,
+  Save,
 } from 'lucide-react'
 import type { ProxyRoute, ProxyRouteCreate, CertificateListResponse, ACMEChallenge } from '@/types'
 
@@ -94,6 +96,8 @@ export default function ReverseProxyPage() {
   const [dnsRouteContext, setDnsRouteContext] = useState<ProxyRoute | null>(null)
   const [isVerifying, setIsVerifying] = useState(false)
   const [verifyResult, setVerifyResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [editDomain, setEditDomain] = useState('')
+  const [isEditingDomain, setIsEditingDomain] = useState(false)
 
   // Queries
   const { data: routesData, isLoading } = useQuery({
@@ -119,6 +123,11 @@ export default function ReverseProxyPage() {
     enabled: isConfigPreviewOpen,
   })
 
+  const { data: mgmtDomain, refetch: refetchMgmtDomain } = useQuery({
+    queryKey: ['management-domain'],
+    queryFn: () => proxyApi.getManagementDomain().then((res) => res.data),
+  })
+
   // Mutations
   const getErrorMessage = (error: Error & { response?: { data?: { detail?: unknown; message?: string; details?: Array<{ msg?: string }> } }; status?: number }) => {
     const data = error.response?.data
@@ -139,9 +148,11 @@ export default function ReverseProxyPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
       queryClient.invalidateQueries({ queryKey: ['proxy-config-preview'] })
-      toast({ title: 'Route created successfully' })
+      toast({ title: 'Route created — applying configuration...' })
       setIsAddModalOpen(false)
       setFormData(createInitialForm())
+      // Auto-apply config after create
+      applyMutation.mutate()
     },
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
@@ -158,9 +169,11 @@ export default function ReverseProxyPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
       queryClient.invalidateQueries({ queryKey: ['proxy-config-preview'] })
-      toast({ title: 'Route updated' })
+      toast({ title: 'Route updated — applying configuration...' })
       setIsEditModalOpen(false)
       setEditingRoute(null)
+      // Auto-apply config after update
+      applyMutation.mutate()
     },
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
@@ -176,7 +189,9 @@ export default function ReverseProxyPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
       queryClient.invalidateQueries({ queryKey: ['proxy-config-preview'] })
-      toast({ title: 'Route deleted' })
+      toast({ title: 'Route deleted — applying configuration...' })
+      // Auto-apply config after delete
+      applyMutation.mutate()
     },
     onError: () => {
       toast({ variant: 'destructive', title: 'Failed to delete route' })
@@ -223,14 +238,55 @@ export default function ReverseProxyPage() {
 
   const renewCertMutation = useMutation({
     mutationFn: (domain: string) => proxyApi.renewCertificate(domain),
-    onSuccess: (_, domain) => {
-      queryClient.invalidateQueries({ queryKey: ['proxy-certificates'] })
-      toast({ title: `Certificate renewal triggered for ${domain}` })
+    onSuccess: (res) => {
+      toast({
+        title: 'Certificate renewal triggered',
+        description: res.data?.message || 'Traefik is re-issuing the certificate. It may take up to 30s to appear.',
+      })
+      // Delay refetch to give Traefik time to re-issue
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['proxy-certificates'] })
+      }, 15000)
+      // Also refetch sooner in case it's fast
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['proxy-certificates'] })
+      }, 5000)
     },
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
         variant: 'destructive',
         title: 'Failed to renew certificate',
+        description: getErrorMessage(error),
+      })
+    },
+  })
+
+  const deleteCertMutation = useMutation({
+    mutationFn: (domain: string) => proxyApi.deleteCertificate(domain),
+    onSuccess: (_, domain) => {
+      queryClient.invalidateQueries({ queryKey: ['proxy-certificates'] })
+      toast({ title: `Certificate for ${domain} deleted` })
+    },
+    onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to delete certificate',
+        description: getErrorMessage(error),
+      })
+    },
+  })
+
+  const updateDomainMutation = useMutation({
+    mutationFn: (domain: string) => proxyApi.updateManagementDomain({ domain }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['management-domain'] })
+      toast({ title: res.data.message || 'Domain updated' })
+      setIsEditingDomain(false)
+    },
+    onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update domain',
         description: getErrorMessage(error),
       })
     },
@@ -301,16 +357,16 @@ export default function ReverseProxyPage() {
       name: form.name,
       hostname: form.hostname,
       backend_url: form.backend_url,
+      path_prefix: form.path_prefix || undefined,
+      strip_prefix: form.strip_prefix,
       ssl_mode: form.ssl_mode as ProxyRouteCreate['ssl_mode'],
       force_https: form.force_https,
       health_check_type: form.health_check_type as ProxyRouteCreate['health_check_type'],
       health_check_path: form.health_check_path || '/',
       health_check_interval: form.health_check_interval || '30s',
       pass_host_header: form.pass_host_header,
-      strip_prefix: form.strip_prefix,
       is_enabled: form.is_enabled,
     }
-    if (form.path_prefix) payload.path_prefix = form.path_prefix
     if (form.custom_request_headers) payload.custom_request_headers = form.custom_request_headers
     if (form.custom_response_headers) payload.custom_response_headers = form.custom_response_headers
     if (form.rate_limit_average) payload.rate_limit_average = parseInt(form.rate_limit_average)
@@ -330,9 +386,12 @@ export default function ReverseProxyPage() {
   const handleEdit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingRoute) return
+    const payload = formToPayload(formData) as unknown as Record<string, unknown>
+    // Explicitly include path_prefix (even as null) so the backend can clear it
+    payload.path_prefix = formData.path_prefix || null
     updateMutation.mutate({
       id: editingRoute.id,
-      data: formToPayload(formData) as Partial<ProxyRoute>,
+      data: payload as Partial<ProxyRoute>,
     })
   }
 
@@ -449,33 +508,6 @@ export default function ReverseProxyPage() {
             placeholder="http://10.0.1.5:8080"
           />
           <p className="text-xs text-muted-foreground">URL of the backend service (private EC2, internal service, etc.)</p>
-        </div>
-      </div>
-
-      {/* Path Routing */}
-      <div className="space-y-4">
-        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Path Routing (Optional)</h3>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor={`${prefix}-path_prefix`}>Path Prefix</Label>
-            <Input
-              id={`${prefix}-path_prefix`}
-              value={formData.path_prefix}
-              onChange={(e) => updateField('path_prefix', e.target.value)}
-              placeholder="/app"
-            />
-          </div>
-          <div className="flex items-end pb-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.strip_prefix}
-                onChange={(e) => updateField('strip_prefix', e.target.checked)}
-                className="rounded"
-              />
-              <span className="text-sm">Strip prefix before forwarding</span>
-            </label>
-          </div>
         </div>
       </div>
 
@@ -598,8 +630,8 @@ export default function ReverseProxyPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Reverse Proxy</h1>
-          <p className="text-muted-foreground">Manage Traefik ingress routes for external services</p>
+          <h1 className="text-3xl font-bold">Proxy Reverso</h1>
+          <p className="text-muted-foreground">Gerenciar rotas de proxy reverso via Traefik</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setIsConfigPreviewOpen(true)}>
@@ -627,9 +659,20 @@ export default function ReverseProxyPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Globe className="h-5 w-5" />
-              Traefik Status
+              Traefik
             </CardTitle>
             <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                traefikStatus?.running
+                  ? 'bg-green-500/20 text-green-500'
+                  : 'bg-red-500/20 text-red-500'
+              }`}>
+                <span className={`h-2 w-2 rounded-full ${traefikStatus?.running ? 'bg-green-500' : 'bg-red-500'}`} />
+                {traefikStatus?.running ? 'Running' : 'Stopped'}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {routes.length} route{routes.length !== 1 ? 's' : ''}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
@@ -637,7 +680,7 @@ export default function ReverseProxyPage() {
                 disabled={healthCheckMutation.isPending}
               >
                 <Heart className={`h-4 w-4 mr-1 ${healthCheckMutation.isPending ? 'animate-pulse' : ''}`} />
-                Health Check All
+                Health Check
               </Button>
               <Button variant="ghost" size="sm" onClick={() => refetchStatus()}>
                 <RefreshCw className="h-4 w-4" />
@@ -645,28 +688,6 @@ export default function ReverseProxyPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Traefik</p>
-              <p className={traefikStatus?.running ? 'text-green-500 font-medium' : 'text-red-500'}>
-                {traefikStatus?.running ? 'Running' : 'Stopped'}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">HTTP Routers</p>
-              <p className="font-medium">{traefikStatus?.http?.routers?.total || 0}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">HTTP Services</p>
-              <p className="font-medium">{traefikStatus?.http?.services?.total || 0}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Configured Routes</p>
-              <p className="font-medium">{routes.length}</p>
-            </div>
-          </div>
-        </CardContent>
       </Card>
 
       {/* Routes Table */}
@@ -900,12 +921,114 @@ export default function ReverseProxyPage() {
                           >
                             <RotateCcw className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`Delete certificate for ${cert.domain}?`)) {
+                                deleteCertMutation.mutate(cert.domain)
+                              }
+                            }}
+                            disabled={deleteCertMutation.isPending}
+                            className="text-destructive hover:text-destructive"
+                            title={`Delete certificate for ${cert.domain}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Management Domain Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Server className="h-5 w-5" />
+            Management Panel Domain
+          </CardTitle>
+          <CardDescription>
+            Domain used to access this management panel
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!mgmtDomain ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : isEditingDomain ? (
+            <div className="flex items-center gap-3">
+              <Input
+                value={editDomain}
+                onChange={(e) => setEditDomain(e.target.value)}
+                placeholder="vpn.example.com"
+                className="max-w-sm font-mono"
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (editDomain.trim()) {
+                    updateDomainMutation.mutate(editDomain.trim())
+                  }
+                }}
+                disabled={updateDomainMutation.isPending || !editDomain.trim()}
+              >
+                <Save className="h-4 w-4 mr-1" />
+                {updateDomainMutation.isPending ? 'Saving...' : 'Save'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditingDomain(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">Domain</p>
+                  <p className="font-mono font-medium">
+                    {mgmtDomain.domain || <span className="text-muted-foreground">Not configured</span>}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">IP Address</p>
+                  <p className="font-mono font-medium">
+                    {mgmtDomain.ip || '-'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">SSL</p>
+                  <p className={mgmtDomain.ssl_enabled ? 'text-green-500 font-medium' : 'text-muted-foreground'}>
+                    {mgmtDomain.ssl_enabled ? 'Let\'s Encrypt' : 'Disabled'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditDomain(mgmtDomain.domain || '')
+                    setIsEditingDomain(true)
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-1" />
+                  Change Domain
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => refetchMgmtDomain()}>
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Changing the domain will update the Traefik routing and restart affected services. Make sure DNS is already pointing to this server.
+              </p>
             </div>
           )}
         </CardContent>

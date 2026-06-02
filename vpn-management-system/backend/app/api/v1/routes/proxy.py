@@ -21,6 +21,7 @@ from app.schemas.proxy_route import (
     CertificateRenewResponse,
 )
 from app.schemas.common import MessageResponse, PaginatedResponse
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ async def list_proxy_routes(
     )
 
 
-@router.post("/routes", response_model=ProxyRouteResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/routes", status_code=status.HTTP_201_CREATED)
 async def create_proxy_route(
     data: ProxyRouteCreate,
     admin: User = Depends(require_admin),
@@ -76,10 +77,10 @@ async def create_proxy_route(
             detail=error,
         )
 
-    return route
+    return ProxyRouteResponse.model_validate(route)
 
 
-@router.get("/routes/{route_id}", response_model=ProxyRouteResponse)
+@router.get("/routes/{route_id}")
 async def get_proxy_route(
     route_id: UUID,
     admin: User = Depends(require_admin),
@@ -96,10 +97,10 @@ async def get_proxy_route(
             detail="Proxy route not found",
         )
 
-    return route
+    return ProxyRouteResponse.model_validate(route)
 
 
-@router.put("/routes/{route_id}", response_model=ProxyRouteResponse)
+@router.put("/routes/{route_id}")
 async def update_proxy_route(
     route_id: UUID,
     data: ProxyRouteUpdate,
@@ -129,7 +130,7 @@ async def update_proxy_route(
             detail=error,
         )
 
-    return updated_route
+    return ProxyRouteResponse.model_validate(updated_route)
 
 
 @router.delete("/routes/{route_id}", response_model=MessageResponse)
@@ -321,3 +322,74 @@ async def renew_certificate(
         message=message,
         domain=domain,
     )
+
+
+@router.delete("/certificates/{domain}", response_model=MessageResponse)
+async def delete_certificate(
+    domain: str,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a certificate from ACME storage and/or manual certs (admin only).
+
+    Permanently removes the certificate. A new one will NOT be auto-requested
+    unless the corresponding route still exists and Traefik handles a request.
+    """
+    service = TraefikService(db)
+
+    success, message = await service.delete_certificate(domain)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message,
+        )
+
+    return MessageResponse(message=message)
+
+
+# ==================== Management Domain ====================
+
+class ManagementDomainResponse(BaseModel):
+    domain: str
+    ip: str
+    ssl_enabled: bool
+
+
+class ManagementDomainUpdate(BaseModel):
+    domain: str
+
+
+@router.get("/management-domain")
+async def get_management_domain(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the current management panel domain from docker-compose.yml."""
+    service = TraefikService(db)
+    return service.get_management_domain()
+
+
+@router.put("/management-domain")
+async def update_management_domain(
+    data: ManagementDomainUpdate,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update the management panel domain in docker-compose.yml (admin only).
+
+    After updating, services need to be restarted for changes to take effect.
+    """
+    service = TraefikService(db)
+
+    success, message = service.update_management_domain(data.domain)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message,
+        )
+
+    return {"success": True, "message": message, "domain": data.domain}

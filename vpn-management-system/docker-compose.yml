@@ -82,6 +82,7 @@ services:
       - TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic
       - TRAEFIK_API_URL=http://traefik:8080
       - TRAEFIK_ACME_EMAIL=${TRAEFIK_ACME_EMAIL:-admin@localhost}
+      - COMPOSE_PROJECT_DIR=${PWD}
     extra_hosts:
       - "nat-agent:host-gateway"
     volumes:
@@ -89,9 +90,9 @@ services:
       - logs:/var/log/vpn-management
       - backend_data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./docker-compose.yml:/app/docker-compose.yml:ro
+      - ./docker-compose.yml:/app/docker-compose.yml
       - traefik_dynamic:/etc/traefik/dynamic
-      - traefik_acme:/acme:ro
+      - traefik_acme:/acme
       - traefik_certs_manual:/certs/manual
     labels:
       - "traefik.enable=true"

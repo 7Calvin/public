@@ -342,6 +342,9 @@ class IPsecService:
                     output = data.get("output", data.get("stdout", ""))
 
                     if not success:
+                        # Detect daemon not running (empty output with failure)
+                        if not output and data.get("returncode") in (7, -1, 1):
+                            output = "StrongSwan daemon (charon) is not running. Try restarting StrongSwan first."
                         logger.warning(f"ipsec command failed via agent: {' '.join(args)} - {output}")
 
                     return success, output
@@ -479,9 +482,9 @@ class IPsecService:
         # teste{1}:   10.10.0.0/16 === 10.7.0.0/16
 
         # Pattern for IKE SA (Phase 1): connection[N]: ESTABLISHED/CONNECTING
-        ike_pattern = re.compile(r'^\s*(\w+)\[(\d+)\]:\s+(ESTABLISHED|CONNECTING)', re.MULTILINE)
+        ike_pattern = re.compile(r'^\s*([\w-]+)\[(\d+)\]:\s+(ESTABLISHED|CONNECTING)', re.MULTILINE)
         # Pattern for Child SA (Phase 2 / ESP tunnel): connection{N}: INSTALLED
-        child_pattern = re.compile(r'^\s*(\w+)\{(\d+)\}:\s+(INSTALLED|REKEYING)', re.MULTILINE)
+        child_pattern = re.compile(r'^\s*([\w-]+)\{(\d+)\}:\s+(INSTALLED|REKEYING)', re.MULTILINE)
 
         # Track IKE SAs
         ike_sas = {}
@@ -539,27 +542,30 @@ class IPsecService:
             if tunnel_status == "IKE_ONLY":
                 conn_info["error_hint"] = "IKE established but tunnel not up. Check ESP cipher compatibility."
 
+            # Escape connection name for use in regex patterns
+            cn = re.escape(conn_name)
+
             # Try to extract uptime
-            uptime_match = re.search(rf'{conn_name}\[\d+\]:\s+ESTABLISHED\s+(.+?),', output)
+            uptime_match = re.search(rf'{cn}\[\d+\]:\s+ESTABLISHED\s+(.+?),', output)
             if uptime_match:
                 conn_info["uptime"] = uptime_match.group(1)
 
             # Try to extract traffic selectors from Child SA
-            ts_match = re.search(rf'{conn_name}\{{\d+\}}:\s+.+\n\s*{conn_name}\{{\d+\}}:\s+.+\n\s+(\S+)\s+===\s+(\S+)', output)
+            ts_match = re.search(rf'{cn}\{{\d+\}}:\s+.+\n\s*{cn}\{{\d+\}}:\s+.+\n\s+(\S+)\s+===\s+(\S+)', output)
             if not ts_match:
-                ts_match = re.search(rf'{conn_name}\{{\d+\}}:.*\n.*\n\s+(\S+)\s+===\s+(\S+)', output)
+                ts_match = re.search(rf'{cn}\{{\d+\}}:.*\n.*\n\s+(\S+)\s+===\s+(\S+)', output)
             if ts_match:
                 conn_info["local_ts"] = ts_match.group(1)
                 conn_info["remote_ts"] = ts_match.group(2)
 
             # Try to extract bytes from Child SA line
-            bytes_match = re.search(rf'{conn_name}\{{\d+\}}:.*?(\d+)\s+bytes_i.*?(\d+)\s+bytes_o', output)
+            bytes_match = re.search(rf'{cn}\{{\d+\}}:.*?(\d+)\s+bytes_i.*?(\d+)\s+bytes_o', output)
             if bytes_match:
                 conn_info["bytes_in"] = int(bytes_match.group(1))
                 conn_info["bytes_out"] = int(bytes_match.group(2))
 
             # Try to extract rekey time
-            rekey_match = re.search(rf'{conn_name}\{{\d+\}}:.*rekeying in\s+(\d+\s+\w+)', output)
+            rekey_match = re.search(rf'{cn}\{{\d+\}}:.*rekeying in\s+(\d+\s+\w+)', output)
             if rekey_match:
                 conn_info["rekey_time"] = rekey_match.group(1)
 

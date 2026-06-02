@@ -168,8 +168,8 @@ class NATRule(Base):
     internal_ip = Column(INET, nullable=False)
     internal_port = Column(Integer, nullable=False)
 
-    # Optional: restrict source
-    source_network = Column(INET)  # NULL = any source
+    # Optional: restrict source (comma-separated IPs/CIDRs, or NULL = any)
+    source_network = Column(Text)  # e.g. "10.0.0.1, 192.168.1.0/24"
 
     # Status
     is_active = Column(Boolean, default=True, index=True)
@@ -194,7 +194,11 @@ class NATRule(Base):
         parts = []
 
         if self.source_network:
-            parts.append(f"ip saddr {self.source_network}")
+            ips = [ip.strip() for ip in self.source_network.split(",") if ip.strip()]
+            if len(ips) == 1:
+                parts.append(f"ip saddr {ips[0]}")
+            elif len(ips) > 1:
+                parts.append("ip saddr { " + ", ".join(ips) + " }")
 
         parts.append(self.protocol.value)
         parts.append(f"dport {self.external_port}")

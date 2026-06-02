@@ -22,7 +22,7 @@ const navigation = [
   { name: 'Users', href: '/users', icon: Users, adminOnly: true },
   { name: 'OpenVPN', href: '/vpn', icon: Shield, adminOnly: false },
   { name: 'IPsec', href: '/ipsec', icon: Link2, adminOnly: true },
-  { name: 'Reverse Proxy', href: '/proxy', icon: Globe, adminOnly: true },
+  { name: 'Proxy Reverso', href: '/proxy', icon: Globe, adminOnly: true },
   { name: 'Firewall', href: '/firewall', icon: Network, adminOnly: true },
   { name: 'Connections', href: '/connections', icon: Activity, adminOnly: true },
   { name: 'Settings', href: '/settings', icon: Settings, adminOnly: false },

@@ -10,12 +10,9 @@ api:
 entryPoints:
   web:
     address: ":80"
-    http:
-      redirections:
-        entryPoint:
-          to: websecure
-          scheme: https
-          permanent: true
+    # No global redirect — IP access must work over plain HTTP.
+    # Domain access gets redirected via the https-redirect middleware.
+    # Also required for ACME HTTP-01 challenges to work.
 
   websecure:
     address: ":443"
