@@ -1,0 +1,149 @@
+"""
+User Model
+"""
+from sqlalchemy import (
+    Column, String, Boolean, Integer, DateTime, Enum as SQLEnum,
+    Text, CheckConstraint, ForeignKey, BigInteger, ARRAY
+)
+from sqlalchemy.dialects.postgresql import UUID, INET, JSONB
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+import enum
+import uuid
+from datetime import datetime
+
+from app.db.session import Base
+
+
+class UserType(str, enum.Enum):
+    """User type enumeration"""
+    HUMAN = "human"
+    SERVICE = "service"
+    ADMIN = "admin"
+
+
+class User(Base):
+    """User model - supports both human users and service accounts"""
+
+    __tablename__ = "users"
+
+    # Primary key
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Basic info
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(255), index=True)
+    password_hash = Column(String(255), nullable=False)
+
+    # User type and flags
+    user_type = Column(
+        SQLEnum(UserType, name="user_type", values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=UserType.HUMAN
+    )
+    is_active = Column(Boolean, default=True, index=True)
+    is_admin = Column(Boolean, default=False)
+
+    # MFA/2FA - OPTIONAL controlled by admin
+    mfa_required = Column(Boolean, default=False, nullable=False)
+    mfa_enabled = Column(Boolean, default=False, nullable=False)
+    mfa_secret = Column(String(32))
+    mfa_backup_codes = Column(ARRAY(Text), default=[])
+
+    # Service Account specific
+    service_name = Column(String(100))
+    service_description = Column(Text)
+    api_key_hash = Column(String(64), index=True)
+    allowed_source_ips = Column(ARRAY(INET), default=[])
+
+    # Limits and quotas
+    max_concurrent_connections = Column(Integer, default=1)
+    bandwidth_limit_mbps = Column(Integer)
+    quota_monthly_gb = Column(Integer)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+    expires_at = Column(DateTime(timezone=True))
+    last_login_at = Column(DateTime(timezone=True))
+    last_login_ip = Column(INET)
+
+    # Audit
+    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+    # Relationships
+    vpn_profile = relationship(
+        "VPNProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        foreign_keys="VPNProfile.user_id"
+    )
+    connections = relationship(
+        "Connection",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="Connection.user_id"
+    )
+    firewall_rules = relationship(
+        "FirewallRule",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="FirewallRule.user_id"
+    )
+    audit_logs = relationship(
+        "AuditLog",
+        foreign_keys="AuditLog.user_id",
+        back_populates="user"
+    )
+
+    # Self-referential relationship for created_by
+    created_by = relationship("User", remote_side=[id])
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint(
+            "user_type != 'service' OR service_name IS NOT NULL",
+            name="valid_service_name"
+        ),
+        CheckConstraint(
+            "NOT (mfa_enabled AND mfa_secret IS NULL)",
+            name="valid_mfa"
+        ),
+    )
+
+    def __repr__(self):
+        return f"<User {self.username} ({self.user_type})>"
+
+    @property
+    def requires_mfa_on_login(self) -> bool:
+        """Check if MFA is required for login"""
+        if self.user_type == UserType.SERVICE:
+            return False
+        return self.mfa_required and self.mfa_enabled
+
+    @property
+    def is_service_account(self) -> bool:
+        """Check if this is a service account"""
+        return self.user_type == UserType.SERVICE
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if account is expired"""
+        if not self.expires_at:
+            return False
+        return datetime.now() > self.expires_at
+
+    def can_connect_from_ip(self, source_ip: str) -> bool:
+        """Check if user can connect from given IP"""
+        if not self.is_service_account:
+            return True
+
+        if not self.allowed_source_ips:
+            return True
+
+        return source_ip in [str(ip) for ip in self.allowed_source_ips]

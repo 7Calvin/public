@@ -1,0 +1,463 @@
+import axios from 'axios'
+import { useAuthStore } from '@/stores/auth'
+
+const API_BASE_URL = '/api/v1'
+
+export const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Request interceptor - add auth token
+api.interceptors.request.use(
+  (config) => {
+    const { accessToken } = useAuthStore.getState()
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+// Response interceptor - handle 401 and refresh token
+// Shared refresh promise to prevent concurrent refresh race conditions
+let refreshPromise: Promise<string> | null = null
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      const { refreshToken, logout } = useAuthStore.getState()
+
+      if (refreshToken) {
+        try {
+          // If a refresh is already in progress, wait for it
+          if (!refreshPromise) {
+            refreshPromise = axios
+              .post(`${API_BASE_URL}/auth/refresh`, {
+                refresh_token: refreshToken,
+              })
+              .then((response) => {
+                const { access_token, refresh_token, user } = response.data
+                useAuthStore.getState().setAuth(user, access_token, refresh_token)
+                return access_token
+              })
+              .finally(() => {
+                refreshPromise = null
+              })
+          }
+
+          const newToken = await refreshPromise
+          originalRequest.headers.Authorization = `Bearer ${newToken}`
+          return api(originalRequest)
+        } catch {
+          refreshPromise = null
+          logout()
+        }
+      } else {
+        logout()
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
+
+// Auth API
+export const authApi = {
+  login: (username: string, password: string, mfaCode?: string) =>
+    api.post('/auth/login', { username, password, mfa_code: mfaCode }),
+
+  logout: () => api.post('/auth/logout'),
+
+  me: () => api.get('/auth/me'),
+
+  refresh: (refreshToken: string) =>
+    api.post('/auth/refresh', { refresh_token: refreshToken }),
+
+  setupMfa: () => api.post('/auth/mfa/setup'),
+
+  verifyMfa: (code: string) => api.post('/auth/mfa/verify', { code }),
+
+  disableMfa: (password: string, mfaCode: string) =>
+    api.post('/auth/mfa/disable', { password, mfa_code: mfaCode }),
+
+  changePassword: (currentPassword: string, newPassword: string, confirmPassword: string) =>
+    api.post('/auth/password/change', {
+      current_password: currentPassword,
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+    }),
+}
+
+// Users API
+export const usersApi = {
+  list: (params?: { page?: number; page_size?: number; search?: string }) =>
+    api.get('/users', { params }),
+
+  get: (id: string) => api.get(`/users/${id}`),
+
+  create: (data: {
+    username: string
+    password: string
+    user_type?: 'human' | 'service'
+    is_admin?: boolean
+    description?: string
+  }) => api.post('/users', data),
+
+  update: (id: string, data: Partial<{ email: string; is_active: boolean; is_admin: boolean }>) =>
+    api.patch(`/users/${id}`, data),
+
+  delete: (id: string) => api.delete(`/users/${id}?permanent=true`),
+
+  resetPassword: (id: string) => api.post(`/users/${id}/reset-password`),
+
+  createServiceAccount: (data: {
+    service_name: string
+    service_description?: string
+    is_admin?: boolean
+    expires_at?: string
+  }) => api.post('/users/service-accounts', data),
+
+  regenerateApiKey: (id: string) => api.post(`/users/service-accounts/${id}/regenerate-key`),
+
+  stats: () => api.get('/users/stats/summary'),
+}
+
+// VPN API
+export const vpnApi = {
+  getProfile: () => api.get('/vpn/profile'),
+
+  createProfile: () => api.post('/vpn/profile'),
+
+  downloadConfig: () =>
+    api.get('/vpn/config', { responseType: 'blob' }),
+
+  // Download generic server config (no per-user certificates)
+  downloadServerConfig: () =>
+    api.get('/vpn/server/download', { responseType: 'blob' }),
+
+  regenerateCertificate: () => api.post('/vpn/certificate/regenerate'),
+
+  // Admin
+  listProfiles: () => api.get('/vpn/profiles'),
+
+  createProfileForUser: (userId: string) =>
+    api.post(`/vpn/profiles/${userId}`, { user_id: userId }),
+
+  updateProfile: (id: string, data: Partial<{ is_active: boolean }>) =>
+    api.patch(`/vpn/profiles/${id}`, data),
+
+  revokeProfile: (id: string, reason?: string) =>
+    api.post(`/vpn/profiles/${id}/revoke`, null, { params: { reason } }),
+
+  deleteProfile: (id: string) => api.delete(`/vpn/profiles/${id}`),
+
+  serverStatus: () => api.get('/vpn/server/status'),
+
+  startServer: () => api.post('/vpn/server/start'),
+
+  stopServer: () => api.post('/vpn/server/stop'),
+
+  restartServer: () => api.post('/vpn/server/restart'),
+
+  getActiveConnections: () => api.get('/vpn/server/connections'),
+
+  disconnectClient: (username: string) => api.post(`/vpn/server/connections/${username}/disconnect`),
+
+  getServerConfig: () => api.get('/vpn/server/config'),
+
+  updateServerConfig: (data: {
+    server_host?: string
+    server_port?: number
+    protocol?: string
+    vpn_network?: string
+    vpn_netmask?: string
+    dns_servers?: string[]
+    push_routes?: string[]
+    compression?: boolean
+    client_to_client?: boolean
+    duplicate_cn?: boolean
+    max_clients?: number
+    keepalive_interval?: number
+    keepalive_timeout?: number
+  }) => api.put('/vpn/server/config', data),
+}
+
+// Firewall API
+export const firewallApi = {
+  listRules: () => api.get('/firewall/rules'),
+
+  getRule: (id: string) => api.get(`/firewall/rules/${id}`),
+
+  createRule: (data: {
+    name: string
+    action: string
+    protocol?: string
+    source_network?: string
+    destination_network?: string
+    destination_port_range?: string
+    priority?: number
+  }) => api.post('/firewall/rules', data),
+
+  updateRule: (id: string, data: Partial<{ name: string; is_active: boolean; priority: number }>) =>
+    api.patch(`/firewall/rules/${id}`, data),
+
+  deleteRule: (id: string) => api.delete(`/firewall/rules/${id}`),
+
+  apply: () => api.post('/firewall/apply'),
+
+  getConfig: () => api.get('/firewall/config'),
+
+  getStatus: () => api.get('/firewall/status'),
+
+  initDefaults: () => api.post('/firewall/init-defaults'),
+
+  // Quick rules
+  getQuickRules: () => api.get('/firewall/quick-rules'),
+
+  toggleQuickRule: (ruleKey: string) => api.post(`/firewall/quick-rules/${ruleKey}/toggle`),
+
+  // NAT/DNAT rules
+  listNatRules: () => api.get('/firewall/nat'),
+
+  createNatRule: (data: {
+    name: string
+    description?: string
+    protocol?: string
+    external_port: number
+    internal_ip: string
+    internal_port: number
+    source_network?: string
+  }) => api.post('/firewall/nat', data),
+
+  updateNatRule: (id: string, data: Partial<{ name: string; is_active: boolean }>) =>
+    api.patch(`/firewall/nat/${id}`, data),
+
+  deleteNatRule: (id: string) => api.delete(`/firewall/nat/${id}`),
+}
+
+// Connections API
+export const connectionsApi = {
+  list: (params?: { page?: number; page_size?: number; status?: string }) =>
+    api.get('/connections', { params }),
+
+  active: () => api.get('/connections/active'),
+
+  live: () => api.get('/connections/live'),
+
+  my: () => api.get('/connections/my'),
+
+  myActive: () => api.get('/connections/my/active'),
+
+  get: (id: string) => api.get(`/connections/${id}`),
+
+  disconnect: (id: string) => api.post(`/connections/${id}/disconnect`),
+
+  disconnectUser: (userId: string) =>
+    api.post(`/connections/user/${userId}/disconnect`),
+
+  stats: () => api.get('/connections/stats/summary'),
+
+  bandwidth: () => api.get('/connections/stats/bandwidth'),
+
+  userStats: (userId: string) => api.get(`/connections/stats/user/${userId}`),
+
+  myStats: () => api.get('/connections/my/stats'),
+
+  cleanup: () => api.post('/connections/cleanup'),
+}
+
+// Admin API
+export const adminApi = {
+  dashboard: () => api.get('/admin/dashboard'),
+
+  auditLogs: (params?: { page?: number; page_size?: number; action?: string }) =>
+    api.get('/admin/audit-logs', { params }),
+
+  systemHealth: () => api.get('/admin/system/health'),
+
+  systemConfig: () => api.get('/admin/system/config'),
+}
+
+// Proxy API (Reverse Proxy / Traefik)
+export const proxyApi = {
+  // Routes CRUD
+  list: (params?: { page?: number; per_page?: number; is_enabled?: boolean }) =>
+    api.get('/proxy/routes', { params }),
+
+  get: (id: string) => api.get(`/proxy/routes/${id}`),
+
+  create: (data: {
+    name: string
+    hostname: string
+    backend_url: string
+    path_prefix?: string
+    strip_prefix?: boolean
+    ssl_mode?: string
+    force_https?: boolean
+    health_check_type?: string
+    health_check_path?: string
+    health_check_interval?: string
+    pass_host_header?: boolean
+    custom_request_headers?: string
+    custom_response_headers?: string
+    rate_limit_average?: number
+    rate_limit_burst?: number
+    is_enabled?: boolean
+  }) => api.post('/proxy/routes', data),
+
+  update: (id: string, data: Partial<{
+    name: string
+    hostname: string
+    backend_url: string
+    path_prefix: string
+    strip_prefix: boolean
+    ssl_mode: string
+    force_https: boolean
+    health_check_type: string
+    health_check_path: string
+    health_check_interval: string
+    pass_host_header: boolean
+    custom_request_headers: string
+    custom_response_headers: string
+    rate_limit_average: number
+    rate_limit_burst: number
+    is_enabled: boolean
+  }>) => api.put(`/proxy/routes/${id}`, data),
+
+  delete: (id: string) => api.delete(`/proxy/routes/${id}`),
+
+  // Config
+  apply: () => api.post('/proxy/apply'),
+
+  previewConfig: () => api.get('/proxy/config/preview'),
+
+  // Status
+  status: () => api.get('/proxy/status'),
+
+  // Health checks
+  healthCheckAll: () => api.post('/proxy/health-check'),
+
+  healthCheck: (id: string) => api.post(`/proxy/routes/${id}/health-check`),
+
+  // SSL Certificates
+  certificates: () => api.get('/proxy/certificates'),
+
+  certificateDetails: (domain: string) => api.get(`/proxy/certificates/${domain}`),
+
+  renewCertificate: (domain: string) => api.post(`/proxy/certificates/${domain}/renew`),
+}
+
+// ACME DNS-01 API
+export const acmeApi = {
+  requestDnsChallenge: (data: { domain: string; proxy_route_id?: string }) =>
+    api.post('/acme/request-dns', data),
+
+  verifyDnsChallenge: (challengeId: string) =>
+    api.post(`/acme/${challengeId}/verify`),
+
+  listChallenges: (params?: { challenge_status?: string; page?: number; per_page?: number }) =>
+    api.get('/acme/challenges', { params }),
+
+  getChallenge: (challengeId: string) =>
+    api.get(`/acme/challenges/${challengeId}`),
+
+  deleteChallenge: (challengeId: string) =>
+    api.delete(`/acme/challenges/${challengeId}`),
+}
+
+// IPsec API
+export const ipsecApi = {
+  // Connections CRUD
+  list: (params?: { page?: number; per_page?: number; is_enabled?: boolean }) =>
+    api.get('/ipsec/connections', { params }),
+
+  get: (id: string) => api.get(`/ipsec/connections/${id}`),
+
+  create: (data: {
+    name: string
+    description?: string
+    left_ip: string
+    left_subnet: string
+    left_id: string
+    right_ip: string
+    right_subnet: string
+    right_id: string
+    auth_method?: string
+    psk?: string
+    ike_version?: string
+    ike_cipher?: string
+    ike_lifetime?: string
+    esp_cipher?: string
+    key_lifetime?: string
+    auto_start?: boolean
+    dpd_action?: string
+    is_enabled?: boolean
+  }) => api.post('/ipsec/connections', data),
+
+  update: (id: string, data: Partial<{
+    name: string
+    description: string
+    left_ip: string
+    left_subnet: string
+    left_id: string
+    right_ip: string
+    right_subnet: string
+    right_id: string
+    auth_method: string
+    psk: string
+    ike_version: string
+    ike_cipher: string
+    ike_lifetime: string
+    esp_cipher: string
+    key_lifetime: string
+    auto_start: boolean
+    dpd_action: string
+    is_enabled: boolean
+  }>) => api.put(`/ipsec/connections/${id}`, data),
+
+  delete: (id: string) => api.delete(`/ipsec/connections/${id}`),
+
+  // Connection control
+  start: (id: string) => api.post(`/ipsec/connections/${id}/start`),
+
+  stop: (id: string) => api.post(`/ipsec/connections/${id}/stop`),
+
+  restart: (id: string) => api.post(`/ipsec/connections/${id}/restart`),
+
+  // Global status & control
+  status: () => api.get('/ipsec/status'),
+
+  connectionStatus: (name: string) => api.get(`/ipsec/status/${name}`),
+
+  reload: () => api.post('/ipsec/reload'),
+
+  apply: () => api.post('/ipsec/apply'),
+
+  restartStrongSwan: () => api.post('/ipsec/restart'),
+
+  // Config preview
+  previewConfig: () => api.get('/ipsec/config/preview'),
+
+  // Utility
+  version: () => api.get('/ipsec/version'),
+
+  syncStatus: () => api.post('/ipsec/sync-status'),
+
+  // Server info for auto-filling Local Gateway fields
+  serverInfo: () => api.get('/ipsec/server-info'),
+
+  // Detailed status and logs
+  statusAll: () => api.get('/ipsec/statusall'),
+
+  logs: (lines: number = 100, connection?: string) =>
+    api.get('/ipsec/logs', { params: { lines, connection } }),
+}

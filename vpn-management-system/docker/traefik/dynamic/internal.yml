@@ -1,0 +1,37 @@
+# Traefik Dynamic Configuration - Shared Middlewares
+# These middlewares are available to all routes (internal + external)
+
+http:
+  middlewares:
+    # Security headers
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          X-Powered-By: ""
+          Server: ""
+
+    # Gzip compression
+    compress:
+      compress:
+        excludedContentTypes:
+          - text/event-stream
+
+    # Default rate limit (can be overridden per route)
+    default-rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+
+# Default TLS store with self-signed fallback
+# (overridden by Let's Encrypt when available)
+tls:
+  stores:
+    default:
+      defaultGeneratedCert:
+        resolver: letsencrypt
+        domain:
+          main: "localhost"

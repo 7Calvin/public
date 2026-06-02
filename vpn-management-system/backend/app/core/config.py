@@ -1,0 +1,209 @@
+"""
+Application Settings and Configuration
+"""
+from typing import List, Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import PostgresDsn, field_validator, computed_field
+from pydantic_core import MultiHostUrl
+
+
+class Settings(BaseSettings):
+    """Application configuration settings"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
+
+    # ==================== General ====================
+    PROJECT_NAME: str = "VPN Management System"
+    VERSION: str = "1.0.0"
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = False
+    SECRET_KEY: str = "change-me-in-production"
+
+    # ==================== API ====================
+    API_V1_PREFIX: str = "/api/v1"
+    BACKEND_HOST: str = "0.0.0.0"
+    BACKEND_PORT: int = 8000
+
+    # ==================== CORS ====================
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173"
+    ]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",")]
+        return v
+
+    # ==================== Database ====================
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "vpn_management"
+    POSTGRES_USER: str = "vpn_admin"
+    POSTGRES_PASSWORD: str = "change-me"
+
+    @computed_field
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 3600
+
+    # ==================== Redis ====================
+    REDIS_HOST: str = "redis"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: Optional[str] = None
+
+    @computed_field
+    @property
+    def REDIS_URL(self) -> str:
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
+    CACHE_TTL_SHORT: int = 300  # 5 minutes
+    CACHE_TTL_MEDIUM: int = 3600  # 1 hour
+    CACHE_TTL_LONG: int = 86400  # 24 hours
+
+    # ==================== JWT/Authentication ====================
+    JWT_SECRET_KEY: str = "change-me-jwt-secret"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # ==================== MFA/2FA ====================
+    MFA_ISSUER_NAME: str = "VPN Management"
+    MFA_DIGITS: int = 6
+    MFA_PERIOD: int = 30
+
+    # ==================== Password ====================
+    MIN_PASSWORD_LENGTH: int = 12
+    PASSWORD_REQUIRE_UPPERCASE: bool = True
+    PASSWORD_REQUIRE_LOWERCASE: bool = True
+    PASSWORD_REQUIRE_NUMBERS: bool = True
+    PASSWORD_REQUIRE_SPECIAL: bool = True
+
+    # ==================== OpenVPN ====================
+    OPENVPN_HOST: str = "vpn.example.com"
+    OPENVPN_PORT: int = 1194
+    OPENVPN_PROTOCOL: str = "udp"
+    OPENVPN_NETWORK: str = "10.8.0.0"
+    OPENVPN_NETMASK: str = "255.255.255.0"
+    OPENVPN_DNS_1: str = "8.8.8.8"
+    OPENVPN_DNS_2: str = "1.1.1.1"
+
+    OPENVPN_CONFIG_DIR: str = "/etc/openvpn"
+    OPENVPN_PKI_DIR: str = "/etc/openvpn/easy-rsa"
+    OPENVPN_CCD_DIR: str = "/etc/openvpn/ccd"
+
+    # EasyRSA
+    EASYRSA_KEY_SIZE: int = 2048
+    EASYRSA_CA_EXPIRE: int = 7500
+    EASYRSA_CERT_EXPIRE: int = 3650
+    EASYRSA_REQ_COUNTRY: str = "BR"
+    EASYRSA_REQ_PROVINCE: str = "SP"
+    EASYRSA_REQ_CITY: str = "SaoPaulo"
+    EASYRSA_REQ_ORG: str = "Empresa LTDA"
+    EASYRSA_REQ_EMAIL: str = "admin@empresa.com"
+    EASYRSA_REQ_OU: str = "VPN Department"
+
+    # ==================== Network ====================
+    PUBLIC_INTERFACE: str = "eth0"
+
+    # CIDR notation for VPN network (derived from netmask)
+    @computed_field
+    @property
+    def OPENVPN_NETMASK_CIDR(self) -> int:
+        """Convert netmask to CIDR notation"""
+        netmask_to_cidr = {
+            "255.255.255.0": 24,
+            "255.255.255.128": 25,
+            "255.255.255.192": 26,
+            "255.255.255.224": 27,
+            "255.255.255.240": 28,
+            "255.255.0.0": 16,
+            "255.0.0.0": 8,
+        }
+        return netmask_to_cidr.get(self.OPENVPN_NETMASK, 24)
+
+    # ==================== Firewall ====================
+    FIREWALL_ENGINE: str = "nftables"  # nftables or iptables
+    FIREWALL_DEFAULT_POLICY: str = "drop"
+    ENABLE_IP_FORWARDING: bool = True
+    ENABLE_NAT: bool = True
+
+    # ==================== NAT Agent ====================
+    NAT_AGENT_URL: str = "http://127.0.0.1:8100"
+    NAT_AGENT_TOKEN: str = "changeme-nat-token"
+
+    # ==================== Email ====================
+    SMTP_ENABLED: bool = False
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_TLS: bool = True
+    SMTP_FROM: Optional[str] = None
+
+    # ==================== Logging ====================
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "json"  # json or text
+    LOG_FILE: str = "/var/log/vpn-management/app.log"
+    AUDIT_LOG_RETENTION_DAYS: int = 365
+
+    # ==================== Rate Limiting ====================
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_BURST: int = 10
+
+    # ==================== Features ====================
+    FEATURE_ALLOW_USER_REGISTRATION: bool = False
+    FEATURE_ENABLE_2FA: bool = True
+    FEATURE_ENABLE_API_KEYS: bool = True
+    FEATURE_ENABLE_LDAP: bool = False
+
+    # ==================== Quotas ====================
+    MAX_USERS: int = 1000
+    MAX_SERVICE_ACCOUNTS: int = 100
+    MAX_CONCURRENT_CONNECTIONS_PER_USER: int = 5
+    MAX_FIREWALL_RULES_PER_USER: int = 50
+    MAX_BANDWIDTH_MBPS_DEFAULT: int = 100
+
+    # ==================== Traefik Reverse Proxy ====================
+    TRAEFIK_DYNAMIC_DIR: str = "/etc/traefik/dynamic"
+    TRAEFIK_API_URL: str = "http://traefik:8080"
+    TRAEFIK_ACME_EMAIL: str = ""  # Must be set to a valid email for ACME/Let's Encrypt
+    TRAEFIK_ACME_STORAGE: str = "/acme/acme.json"
+
+    # ==================== ACME DNS-01 ====================
+    ACME_STAGING: bool = False  # Set True to use Let's Encrypt staging (for testing)
+    ACME_CERTS_DIR: str = "/certs/manual"
+    ACME_ACCOUNT_DIR: str = "/app/data/acme"
+
+    @computed_field
+    @property
+    def ACME_DIRECTORY_URL(self) -> str:
+        if self.ACME_STAGING:
+            return "https://acme-staging-v02.api.letsencrypt.org/directory"
+        return "https://acme-v02.api.letsencrypt.org/directory"
+
+    # ==================== Admin ====================
+    INITIAL_ADMIN_USERNAME: str = "admin"
+    INITIAL_ADMIN_EMAIL: str = "admin@empresa.com"
+    INITIAL_ADMIN_PASSWORD: str = "temp123$$"
+    INITIAL_ADMIN_REQUIRE_MFA: bool = True
+
+
+# Singleton instance
+settings = Settings()
