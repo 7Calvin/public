@@ -33,7 +33,7 @@ def upgrade() -> None:
         sa.Column('external_port', sa.Integer(), nullable=False),
         sa.Column('internal_ip', postgresql.INET(), nullable=False),
         sa.Column('internal_port', sa.Integer(), nullable=False),
-        sa.Column('source_network', postgresql.INET(), nullable=True),
+        sa.Column('source_network', sa.Text(), nullable=True),
         sa.Column('is_active', sa.Boolean(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
