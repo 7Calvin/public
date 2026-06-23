@@ -205,6 +205,9 @@ services:
       # host as its NAT gateway (e.g. 10.48.0.0/16). Empty = feature disabled.
       - NAT_GATEWAY_NETWORK=${NAT_GATEWAY_NETWORK:-}
       - PUBLIC_INTERFACE=${PUBLIC_INTERFACE:-eth0}
+      # IPsec site-to-site: remote subnets exempt from masquerade (real src IP
+      # preserved so the peer can initiate back into the VPC). Empty = off.
+      - NAT_GATEWAY_EXCLUDE=${NAT_GATEWAY_EXCLUDE:-}
     depends_on:
       postgres:
         condition: service_healthy

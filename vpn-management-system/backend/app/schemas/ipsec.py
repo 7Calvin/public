@@ -223,7 +223,16 @@ class IPsecConnectionListResponse(BaseModel):
     right_ip: str
     right_subnet: str
     right_id: str
+    # Crypto settings — included so the edit form pre-fills with the saved values
+    # (not the defaults). Without these, the frontend openEditModal falls back to
+    # the default cipher and can overwrite the real value on save.
+    auth_method: str
     ike_version: IKEVersion
+    ike_cipher: str
+    ike_lifetime: str
+    esp_cipher: str
+    key_lifetime: str
+    dpd_action: DPDAction
     status: IPsecStatus
     is_enabled: bool
     auto_start: bool

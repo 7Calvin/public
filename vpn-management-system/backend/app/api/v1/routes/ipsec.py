@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.user import User
+from app.models.ipsec import IPsecStatus
 from app.services.ipsec_service import IPsecService
 from app.dependencies.auth import require_admin
 from app.schemas.ipsec import (
@@ -81,6 +82,12 @@ async def create_ipsec_connection(
             detail=error
         )
 
+    # Push the config to StrongSwan right away (mirrors the Firewall auto-apply).
+    # Don't fail the request if the agent is down — the connection is already saved.
+    applied, apply_err = await service.apply_config()
+    if not applied:
+        logger.warning(f"Connection created but config not applied: {apply_err}")
+
     return connection
 
 
@@ -133,6 +140,17 @@ async def update_ipsec_connection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error
         )
+
+    # Regenerate and apply so /etc/ipsec.conf reflects the change without a manual
+    # Apply click. Don't fail the request if the agent is down — it's already saved.
+    applied, apply_err = await service.apply_config()
+    if not applied:
+        logger.warning(f"Connection updated but config not applied: {apply_err}")
+
+    # If the tunnel is live, restart it to renegotiate with the new proposal
+    # (e.g. a changed Phase 2 / esp_cipher). A reload alone won't renegotiate.
+    if updated_connection.is_enabled and updated_connection.status == IPsecStatus.ACTIVE:
+        await service.restart_connection(updated_connection.name)
 
     return updated_connection
 

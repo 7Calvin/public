@@ -99,10 +99,17 @@ def connection_down(connection_name):
 
 @app.route('/reload', methods=['POST'])
 def reload_config():
-    """Reload IPsec configuration"""
+    """Reload IPsec configuration.
+
+    'ipsec reload' rereads ipsec.conf but NOT ipsec.secrets, so a freshly
+    configured PSK would fail with "no shared key found" until a restart.
+    Run 'ipsec rereadsecrets' first so new/changed PSKs take effect on reload.
+    """
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    result = run_ipsec_command(['reload'])
+    reread = run_ipsec_command(['rereadsecrets'])  # reload ipsec.secrets (PSKs)
+    result = run_ipsec_command(['reload'])          # reload ipsec.conf
+    result['rereadsecrets'] = reread
     return jsonify(result)
 
 @app.route('/restart', methods=['POST'])

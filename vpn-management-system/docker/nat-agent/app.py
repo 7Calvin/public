@@ -30,6 +30,12 @@ API_TOKEN = os.environ.get('NAT_AGENT_TOKEN', 'changeme-nat-token')
 NAT_GATEWAY_NETWORK = os.environ.get('NAT_GATEWAY_NETWORK', '').strip()
 PUBLIC_INTERFACE = os.environ.get('PUBLIC_INTERFACE', 'eth0').strip()
 
+# Site-to-site (IPsec) destinations that must NOT be masqueraded, so the real
+# source IP is preserved and the IPsec policy matches on the actual addresses.
+# Comma-separated CIDRs (e.g. "172.16.12.0/24"). Required for the remote peer to
+# initiate connections back into NAT_GATEWAY_NETWORK over the tunnel. Empty = off.
+NAT_GATEWAY_EXCLUDE = os.environ.get('NAT_GATEWAY_EXCLUDE', '').strip()
+
 # iptables comment used to tag (and later identify/remove) gateway-NAT rules.
 GW_NAT_COMMENT = 'vpn-gw-nat'
 
@@ -151,6 +157,22 @@ def apply_gateway_nat():
 
     # Remove any stale copies first so restarts don't stack duplicates.
     clear_gateway_nat()
+
+    # IPsec site-to-site exemptions: traffic between the private subnet and these
+    # remote networks must keep its real source IP (no masquerade) and be allowed
+    # to forward in both directions. These RETURN rules are appended BEFORE the
+    # MASQUERADE below so they take precedence in POSTROUTING (append order = chain
+    # order on the same chain).
+    exclude_nets = [s.strip() for s in NAT_GATEWAY_EXCLUDE.split(',') if s.strip()]
+    for dst in exclude_nets:
+        run_iptables(
+            ['-t', 'nat', '-A', 'POSTROUTING', '-s', net, '-d', dst,
+             '-j', 'RETURN'] + tag, check=False
+        )
+        run_iptables(['-A', 'FORWARD', '-s', net, '-d', dst, '-j', 'ACCEPT'] + tag, check=False)
+        run_iptables(['-A', 'FORWARD', '-s', dst, '-d', net, '-j', 'ACCEPT'] + tag, check=False)
+    if exclude_nets:
+        logger.info(f"Gateway NAT exemptions (no-masquerade) for: {', '.join(exclude_nets)}")
 
     # SNAT traffic leaving the private subnet toward anything outside it.
     run_iptables(
