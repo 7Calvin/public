@@ -203,32 +203,47 @@ VPN Clients (10.8.0.0/24) → OpenVPN Server → NAT → Private Subnet
 
 ## Instalação
 
-### Instalação em uma linha (recomendado)
+### Instalação em uma linha
 
-Em um **Ubuntu 24.04** limpo, rode **um único comando** — ele instala as dependências,
-baixa o código e abre o instalador guiado:
+Em um **Ubuntu 24.04** limpo. Escolha um dos dois modos:
+
+**1) Instalação guiada (interativa) — recomendada**
+
+Baixa e roda o instalador com o assistente (whiptail). Use a forma *baixar-e-rodar*
+(o `curl | bash` puro deixa o stdin ocupado pelo pipe e o menu não funciona direito):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/7Calvin/public/main/vpn-management-system/bootstrap.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/7Calvin/public/main/vpn-management-system/bootstrap.sh -o vpn-install.sh
+sudo bash vpn-install.sh
 ```
 
-Variações:
+**2) Instalação desatendida (sem perguntas) — one-liner puro**
+
+Faz tudo com defaults sensatos (banco local, senha admin gerada, SSL self-signed);
+você só informa o domínio:
 
 ```bash
-# Instalação totalmente desatendida (sem perguntas), passando a config por variáveis:
 curl -fsSL https://raw.githubusercontent.com/7Calvin/public/main/vpn-management-system/bootstrap.sh \
   | sudo NONINTERACTIVE=1 DOMAIN=vpn.exemplo.com bash
-
-# Fixar uma versão específica (tag) em vez do último main:
-curl -fsSL https://raw.githubusercontent.com/7Calvin/public/main/vpn-management-system/bootstrap.sh \
-  | sudo VPN_REPO_REF=v1.1.2 bash
 ```
 
-> Segurança: o comando executa um script remoto como root. Se preferir auditar antes,
-> baixe e leia primeiro: `curl -fsSL <url>/bootstrap.sh -o bootstrap.sh` e depois `sudo bash bootstrap.sh`.
+Opções extras para o modo desatendido (todas via variáveis de ambiente):
+
+| Variável | Default | Descrição |
+|---|---|---|
+| `DOMAIN` | *(obrigatório)* | Domínio/host do painel |
+| `DB_TYPE` | `local` | `local` (Postgres no compose) ou `external` |
+| `ADMIN_PW_MODE` | `generate` | `generate` (senha aleatória, mostrada no fim) ou defina `ADMIN_PASSWORD` |
+| `VPN_NETWORK` / `VPN_PORT` | `10.8.0.0` / `1194` | Rede/porta do OpenVPN |
+| `NAT_GATEWAY_NETWORK` | *(vazio)* | CIDR de uma subnet que usa este host como gateway NAT (opcional) |
+| `USE_LETSENCRYPT` | `false` | `true` para Let's Encrypt (requer `ACME_EMAIL` e portas 80/443 públicas) |
+| `INSTALL_ACTION` | `upgrade` (se já instalado) | Numa máquina já instalada, o padrão é **upgrade** (preserva dados/certs). Passe `INSTALL_ACTION=fresh` para reinstalar do zero (**apaga volumes**). |
+| `VPN_REPO_REF` | `main` | Fixa uma versão específica, ex.: `v1.1.4` |
+
+> Segurança: o comando executa um script remoto como root. Para auditar antes,
+> baixe e leia o `bootstrap.sh` (opção 1 já faz isso).
 
 O bootstrap clona o repositório em `/opt/vpn-management-src` e chama o `install.sh`.
-Para instalações manuais (clone + `./install.sh`), veja "Instalação em Produção" abaixo.
 
 ### Pré-requisitos
 

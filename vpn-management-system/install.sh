@@ -14,6 +14,10 @@ set -e
 # Get script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# Application version (source of truth: the VERSION file next to this script)
+APP_VERSION="$(cat "${SCRIPT_DIR}/VERSION" 2>/dev/null | tr -d '[:space:]')"
+APP_VERSION="${APP_VERSION:-1.0.0}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -123,9 +127,12 @@ wt_yesno() {
 }
 
 # Input box with validation support
-# Usage: wt_input VAR_NAME "Title" "Prompt text" [default]
+# Usage: wt_input VAR_NAME "Title" "Prompt text" [default] [optional]
+# Pass "optional" as the 5th arg for fields where an empty value is valid
+# (e.g. features that are simply disabled when left blank). Without it, a field
+# with no default is treated as required and aborts in non-interactive mode.
 wt_input() {
-    local var_name=$1 title=$2 prompt_text=$3 default=$4
+    local var_name=$1 title=$2 prompt_text=$3 default=$4 optional=${5:-}
 
     # Check if env var already set
     local current_val="${!var_name}"
@@ -147,8 +154,8 @@ wt_input() {
             fi
         done
     else
-        # Non-interactive: use default or fail
-        if [ -n "$default" ]; then
+        # Non-interactive: use default, accept empty if optional, else fail
+        if [ -n "$default" ] || [ "$optional" = "optional" ]; then
             eval "$var_name=\$default"
             return 0
         else
@@ -246,7 +253,7 @@ print_banner() {
     echo "╔═══════════════════════════════════════════════════════════╗"
     echo "║                                                           ║"
     echo "║           VPN Management System Installer                 ║"
-    echo "║                     v1.0.0                                ║"
+    printf "║%*sv%s%*s║\n" $(( (59 - ${#APP_VERSION} - 1) / 2 )) "" "$APP_VERSION" $(( 59 - ${#APP_VERSION} - 1 - (59 - ${#APP_VERSION} - 1) / 2 )) ""
     echo "║                                                           ║"
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -1615,11 +1622,15 @@ main() {
     # Detect existing installation and ask what to do
     if detect_existing_installation; then
         local INSTALL_ACTION=""
+        # NOTE: "upgrade" is listed FIRST on purpose — in non-interactive mode
+        # wt_menu picks the first option, so the safe, data-preserving action is
+        # the default. A destructive fresh reinstall must be opted into explicitly
+        # (interactively, or via INSTALL_ACTION=fresh).
         wt_menu INSTALL_ACTION \
             "Existing Installation Detected" \
             "An existing installation was found at ${INSTALL_DIR}.\nWhat would you like to do?" \
-            "fresh"   "Fresh install (delete existing and start clean)" \
-            "upgrade" "Upgrade existing installation (preserves data)"
+            "upgrade" "Upgrade existing installation (preserves data)" \
+            "fresh"   "Fresh install (delete existing and start clean)"
 
         if [ "$INSTALL_ACTION" = "upgrade" ]; then
             perform_upgrade
@@ -1633,7 +1644,7 @@ main() {
             log_success "Existing installation removed"
         fi
     else
-        wt_msgbox "Welcome" "VPN Management System Installer v1.0.0\n\nThis wizard will guide you through the installation\nof the VPN Management System.\n\nYou will need:\n  - A domain name pointing to this server\n  - Root access (already verified)\n\nPress OK to continue."
+        wt_msgbox "Welcome" "VPN Management System Installer v${APP_VERSION}\n\nThis wizard will guide you through the installation\nof the VPN Management System.\n\nYou will need:\n  - A domain name pointing to this server\n  - Root access (already verified)\n\nPress OK to continue."
     fi
 
     # ---- Domain ----
@@ -1726,7 +1737,7 @@ main() {
         "Public uplink interface (toward the internet):" "$DEFAULT_PUBLIC_INTERFACE"
     wt_input NAT_GATEWAY_NETWORK "Network" \
         "Private subnet that uses this host as a NAT gateway (CIDR, e.g. 10.48.0.0/16).\nLeave EMPTY to disable." \
-        "$DEFAULT_NAT_GATEWAY_NETWORK"
+        "$DEFAULT_NAT_GATEWAY_NETWORK" optional
 
     # ---- SSL / Let's Encrypt ----
     if wt_yesno "SSL Configuration" \

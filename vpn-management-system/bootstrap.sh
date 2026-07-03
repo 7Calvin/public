@@ -2,23 +2,22 @@
 #
 # VPN Management System - one-line installer / bootstrapper
 #
-# Usage (fresh Ubuntu 24.04, as root or with sudo):
+# Usage (fresh Ubuntu 24.04):
 #
-#   curl -fsSL https://raw.githubusercontent.com/7Calvin/public/main/vpn-management-system/bootstrap.sh | sudo bash
+#   # Guided (interactive) install — download then run so stdin stays a real TTY:
+#   curl -fsSL <url>/bootstrap.sh -o vpn-install.sh && sudo bash vpn-install.sh
+#
+#   # Unattended one-liner (no prompts) — sensible defaults, just give the domain:
+#   curl -fsSL <url>/bootstrap.sh | sudo NONINTERACTIVE=1 DOMAIN=vpn.example.com bash
+#
+#   # Pin a specific release:
+#   curl -fsSL <url>/bootstrap.sh | sudo VPN_REPO_REF=v1.1.3 NONINTERACTIVE=1 DOMAIN=... bash
 #
 # What it does:
 #   1. installs the minimal tools needed to fetch the source (git, curl)
 #   2. clones (or updates) the repository into /opt/vpn-management-src
-#   3. runs install.sh, reconnecting the terminal so the guided (whiptail)
-#      installer works even though this script arrived through a curl | bash pipe
-#
-# Fully unattended install (no prompts) — pass NONINTERACTIVE and any config:
-#
-#   curl -fsSL <url>/bootstrap.sh | sudo NONINTERACTIVE=1 DOMAIN=vpn.example.com bash
-#
-# Pin to a specific release instead of the latest main:
-#
-#   curl -fsSL <url>/bootstrap.sh | sudo VPN_REPO_REF=v1.1.2 bash
+#   3. runs install.sh (reconnected to /dev/tty when a terminal is available, so
+#      the guided installer works; falls back to non-interactive otherwise)
 #
 set -euo pipefail
 
