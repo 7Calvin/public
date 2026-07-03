@@ -203,6 +203,33 @@ VPN Clients (10.8.0.0/24) → OpenVPN Server → NAT → Private Subnet
 
 ## Instalação
 
+### Instalação em uma linha (recomendado)
+
+Em um **Ubuntu 24.04** limpo, rode **um único comando** — ele instala as dependências,
+baixa o código e abre o instalador guiado:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/7Calvin/public/main/vpn-management-system/bootstrap.sh | sudo bash
+```
+
+Variações:
+
+```bash
+# Instalação totalmente desatendida (sem perguntas), passando a config por variáveis:
+curl -fsSL https://raw.githubusercontent.com/7Calvin/public/main/vpn-management-system/bootstrap.sh \
+  | sudo NONINTERACTIVE=1 DOMAIN=vpn.exemplo.com bash
+
+# Fixar uma versão específica (tag) em vez do último main:
+curl -fsSL https://raw.githubusercontent.com/7Calvin/public/main/vpn-management-system/bootstrap.sh \
+  | sudo VPN_REPO_REF=v1.1.2 bash
+```
+
+> Segurança: o comando executa um script remoto como root. Se preferir auditar antes,
+> baixe e leia primeiro: `curl -fsSL <url>/bootstrap.sh -o bootstrap.sh` e depois `sudo bash bootstrap.sh`.
+
+O bootstrap clona o repositório em `/opt/vpn-management-src` e chama o `install.sh`.
+Para instalações manuais (clone + `./install.sh`), veja "Instalação em Produção" abaixo.
+
 ### Pré-requisitos
 
 - **Ubuntu 24.04 LTS** (homologado e testado)
