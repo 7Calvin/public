@@ -86,9 +86,9 @@ wt_msgbox() {
     local title=$1 msg=$2
     if $INTERACTIVE; then
         whiptail --title "$title" --msgbox "$msg" $WT_HEIGHT $WT_WIDTH
-    else
-        echo "[$title] $msg"
     fi
+    # Non-interactive: stay quiet — the banner and the final summary already
+    # cover this, and echoing raw messages (with literal \n) just adds noise.
 }
 
 # Yes/No question. Returns 0 for yes, 1 for no.
@@ -631,8 +631,13 @@ net.ipv4.conf.default.rp_filter=0
 net.ipv4.conf.all.accept_redirects=1
 net.ipv4.conf.all.send_redirects=1
 SYSEOF
-    sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
-    sysctl --system > /dev/null 2>&1
+    # Best-effort tweak to the legacy monolithic sysctl file. Newer Ubuntu
+    # (25.10+/26.04) ships no /etc/sysctl.conf — it uses /etc/sysctl.d drop-ins,
+    # which we already wrote above. Guard so `set -e` doesn't abort the install.
+    if [ -f /etc/sysctl.conf ]; then
+        sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf || true
+    fi
+    sysctl --system > /dev/null 2>&1 || true
 
     # Allow ESP protocol through UFW
     if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
@@ -1534,6 +1539,32 @@ perform_upgrade() {
 
 # ==================== Main ====================
 
+# ---- Non-interactive progress bar (clean output; verbose captured to a log) ----
+NONINT_LOG="/var/log/vpn-install.log"
+
+nonint_bar() {
+    local pct=$1 label=$2 width=32
+    local filled=$(( pct * width / 100 ))
+    local bar empty
+    bar=$(printf '%*s' "$filled" '' | tr ' ' '#')
+    empty=$(printf '%*s' "$(( width - filled ))" '')
+    printf '\r  [%s%s] %3d%%  %-38.38s' "$bar" "$empty" "$pct" "$label"
+}
+
+# run_quiet <pct> <label> <cmd...> — draw the bar, run cmd with output sent to the
+# log; on failure show the tail so the error isn't swallowed.
+run_quiet() {
+    local pct=$1 label=$2; shift 2
+    nonint_bar "$pct" "$label"
+    if ! "$@" >>"$NONINT_LOG" 2>&1; then
+        printf '\n'
+        log_error "Failed at: $label"
+        echo "  --- last 25 lines of $NONINT_LOG ---"
+        tail -n 25 "$NONINT_LOG" 2>/dev/null
+        exit 1
+    fi
+}
+
 run_fresh_install_steps() {
     # Run all installation steps, with progress gauge in interactive mode
     local INSTALL_LOG="/tmp/vpn-install-$$.log"
@@ -1585,31 +1616,35 @@ run_fresh_install_steps() {
         fi
         rm -f "$INSTALL_ERR"
     else
-        install_dependencies
-        install_strongswan
-        install_docker
-        configure_firewall
-        create_directory_structure
-        generate_certificates
+        # Non-interactive: show a clean progress bar; capture verbose output to a
+        # log. Keep apt/needrestart fully quiet and non-blocking.
+        : > "$NONINT_LOG" 2>/dev/null || NONINT_LOG="/tmp/vpn-install-$$.log"
+        export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+        echo "Installing VPN Management System  (full log: $NONINT_LOG)"
+
+        run_quiet 5   "Installing system dependencies" install_dependencies
+        run_quiet 15  "Installing StrongSwan (IPsec)"  install_strongswan
+        run_quiet 25  "Installing Docker"              install_docker
+        run_quiet 35  "Configuring firewall"           configure_firewall
+        run_quiet 42  "Creating directory structure"   create_directory_structure
+        run_quiet 48  "Generating SSL certificates"    generate_certificates
 
         # Detect Docker socket GID for backend container permissions
         DOCKER_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null)
         if [ -z "$DOCKER_GID" ] || [ "$DOCKER_GID" = "0" ]; then
             DOCKER_GID="988"
-            log_warn "Could not detect Docker GID, using default 988"
-        else
-            log_info "Detected Docker socket GID: $DOCKER_GID"
         fi
 
-        create_env_file
-        create_docker_compose
-        copy_application_files
-        create_traefik_config
-        install_ipsec_agent
-        install_update_agent
-        start_services
-        fix_permissions
-        setup_letsencrypt
+        run_quiet 55  "Creating environment config"    create_env_file
+        run_quiet 60  "Creating Docker Compose config"  create_docker_compose
+        run_quiet 65  "Copying application files"       copy_application_files
+        run_quiet 70  "Configuring Traefik"             create_traefik_config
+        run_quiet 75  "Installing IPsec Agent"          install_ipsec_agent
+        run_quiet 80  "Installing Update Agent"         install_update_agent
+        run_quiet 92  "Building & starting services"    start_services
+        run_quiet 96  "Fixing permissions"              fix_permissions
+        run_quiet 99  "Configuring SSL"                 setup_letsencrypt
+        nonint_bar 100 "Done"; printf '\n'
     fi
 }
 
