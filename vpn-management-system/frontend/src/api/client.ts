@@ -477,3 +477,43 @@ export const ipsecApi = {
   logs: (lines: number = 100, connection?: string) =>
     api.get('/ipsec/logs', { params: { lines, connection } }),
 }
+
+// System / Update API
+export interface UpdateStatus {
+  state: 'idle' | 'running' | 'done' | 'failed' | 'rolled_back'
+  pct: number
+  message: string
+  error?: string
+  ref?: string
+  updated_at?: string
+  log_tail?: string[]
+}
+
+export const systemApi = {
+  // Running version for the badge (any authenticated user).
+  version: () => api.get('/system/version'),
+
+  // Admin: fetch upstream and check whether a newer version exists.
+  checkUpdate: () => api.get('/system/update/check'),
+
+  // Admin: kick off the update. Returns a job id immediately.
+  startUpdate: (payload?: { ref?: string; backup?: boolean; run_migrations?: boolean }) =>
+    api.post('/system/update', payload ?? {}),
+
+  // Admin: explicitly regenerate OpenVPN server.conf (PKI/certs preserved).
+  regenerateOpenvpnConfig: () => api.post('/system/openvpn/regenerate-config'),
+
+  // Resilient progress polling: hits the host update-agent DIRECTLY through
+  // Traefik (`/update-agent/status`), bypassing the backend — which restarts
+  // mid-update. Traefik injects the agent token, so no auth header is needed
+  // here. Tolerant of transient network errors during the restart window.
+  agentStatus: async (): Promise<UpdateStatus | null> => {
+    try {
+      const res = await fetch('/update-agent/status', { cache: 'no-store' })
+      if (!res.ok) return null
+      return (await res.json()) as UpdateStatus
+    } catch {
+      return null
+    }
+  },
+}

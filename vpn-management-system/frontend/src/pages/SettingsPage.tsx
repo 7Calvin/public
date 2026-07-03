@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff } from 'lucide-react'
+import SystemUpdateCard from '@/components/SystemUpdateCard'
 
 export default function SettingsPage() {
   const { user, checkAuth } = useAuthStore()
@@ -406,6 +407,9 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* System & Updates (admin only) */}
+      {user?.is_admin && <SystemUpdateCard />}
     </div>
   )
 }

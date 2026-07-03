@@ -17,12 +17,13 @@ PUBLIC_INTERFACE=${PUBLIC_INTERFACE:-eth0}
 # Setup directories on volume
 mkdir -p /etc/openvpn/{ccd,logs,pki,scripts}
 
-# Copy scripts from image to volume
-if [ ! -f "/etc/openvpn/scripts/auth.sh" ]; then
-    echo "Copying scripts to volume..."
-    cp /opt/openvpn-scripts/*.sh /etc/openvpn/scripts/
-    chmod +x /etc/openvpn/scripts/*.sh
-fi
+# Refresh scripts from image to volume on every start.
+# These are CODE, not data — always overwrite so updates actually take effect.
+# (The old "copy only if missing" guard silently froze scripts across updates.)
+# Certs/PKI/ccd/server.conf are data and are handled separately below, never here.
+echo "Refreshing OpenVPN scripts from image..."
+cp /opt/openvpn-scripts/*.sh /etc/openvpn/scripts/ 2>/dev/null || true
+chmod +x /etc/openvpn/scripts/*.sh 2>/dev/null || true
 
 # Setup EasyRSA on volume
 if [ ! -d "/etc/openvpn/easy-rsa" ]; then

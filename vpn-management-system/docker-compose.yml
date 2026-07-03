@@ -79,18 +79,22 @@ services:
       - NAT_AGENT_TOKEN=${NAT_AGENT_TOKEN:-changeme-nat-token}
       - IPSEC_AGENT_URL=${IPSEC_AGENT_URL:-http://172.17.0.1:8101}
       - IPSEC_AGENT_TOKEN=${IPSEC_AGENT_TOKEN:-changeme-ipsec-token}
+      - UPDATE_AGENT_URL=${UPDATE_AGENT_URL:-http://update-agent:8102}
+      - UPDATE_AGENT_TOKEN=${UPDATE_AGENT_TOKEN:-changeme-update-token}
       - TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic
       - TRAEFIK_API_URL=http://traefik:8080
       - TRAEFIK_ACME_EMAIL=${TRAEFIK_ACME_EMAIL:-admin@localhost}
       - COMPOSE_PROJECT_DIR=${PWD}
     extra_hosts:
       - "nat-agent:host-gateway"
+      - "update-agent:host-gateway"
     volumes:
       - openvpn_data:/etc/openvpn
       - logs:/var/log/vpn-management
       - backend_data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docker-compose.yml:/app/docker-compose.yml
+      - ./VERSION:/app/VERSION:ro
       - traefik_dynamic:/etc/traefik/dynamic
       - traefik_acme:/acme
       - traefik_certs_manual:/certs/manual

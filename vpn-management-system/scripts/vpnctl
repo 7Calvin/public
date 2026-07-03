@@ -87,20 +87,35 @@ cmd_logs() {
 
 cmd_update() {
     echo -e "${BLUE}Updating VPN Management System...${NC}"
-    cd "$INSTALL_DIR"
 
-    # Backup first
+    # Prefer the resilient orchestrator (git pull -> build-before-down ->
+    # health-gated with automatic rollback, OpenVPN certs preserved). This is
+    # the same script the UI/update-agent runs. Falls back to the legacy path.
+    UPDATE_SCRIPT="${INSTALL_DIR}/update-agent/update.sh"
+    if [ -x "$UPDATE_SCRIPT" ]; then
+        echo "Running resilient updater (${UPDATE_SCRIPT})..."
+        UPDATE_REF="${2:-}" bash "$UPDATE_SCRIPT"
+        rc=$?
+        if [ "$rc" = "0" ]; then
+            echo -e "${GREEN}Update complete${NC}"
+        elif [ "$rc" = "2" ]; then
+            echo -e "${YELLOW}Update failed health check — rolled back to previous version${NC}"
+        elif [ "$rc" = "3" ]; then
+            echo -e "${YELLOW}Another update is already running${NC}"
+        else
+            echo -e "${RED}Update failed — see /var/lib/vpn-update/update.log${NC}"
+        fi
+        return $rc
+    fi
+
+    # ---- Legacy fallback (no update-agent installed) ----
+    cd "$INSTALL_DIR"
     echo "Creating backup before update..."
     cmd_backup
-
-    # Pull latest images
     echo "Pulling latest images..."
     docker compose --env-file "$ENV_FILE" pull
-
-    # Rebuild and restart
     echo "Rebuilding and restarting..."
     docker compose --env-file "$ENV_FILE" up -d --build
-
     echo -e "${GREEN}Update complete${NC}"
 }
 

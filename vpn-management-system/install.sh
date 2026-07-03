@@ -513,6 +513,71 @@ EOF
     log_success "IPsec Agent installed"
 }
 
+install_update_agent() {
+    log_info "Installing Update Agent..."
+
+    UPDATE_AGENT_DIR="/opt/vpn-management/update-agent"
+    UPDATE_GIT_REMOTE="${UPDATE_GIT_REMOTE:-https://github.com/7Calvin/public.git}"
+    UPDATE_GIT_BRANCH="${UPDATE_GIT_BRANCH:-main}"
+    UPDATE_AGENT_TOKEN="${UPDATE_AGENT_TOKEN:-$(generate_secret)}"
+    mkdir -p "$UPDATE_AGENT_DIR" /var/lib/vpn-update
+
+    # Copy agent files (app + orchestrator script)
+    cp "${SCRIPT_DIR}/docker/update-agent/app.py" "$UPDATE_AGENT_DIR/"
+    cp "${SCRIPT_DIR}/docker/update-agent/requirements.txt" "$UPDATE_AGENT_DIR/"
+    cp "${SCRIPT_DIR}/docker/update-agent/update.sh" "$UPDATE_AGENT_DIR/"
+    chmod +x "$UPDATE_AGENT_DIR/update.sh"
+
+    # Python virtual environment
+    log_info "  Creating Python virtual environment..."
+    python3 -m venv "$UPDATE_AGENT_DIR/venv"
+    source "$UPDATE_AGENT_DIR/venv/bin/activate"
+    pip install --upgrade pip -q
+    pip install -r "$UPDATE_AGENT_DIR/requirements.txt" -q
+    deactivate
+
+    # Save token
+    echo "$UPDATE_AGENT_TOKEN" > /opt/vpn-management/update-agent.token
+    chmod 600 /opt/vpn-management/update-agent.token
+
+    # systemd service
+    cat > /etc/systemd/system/update-agent.service << EOF
+[Unit]
+Description=Update Agent for VPN Management System
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=$UPDATE_AGENT_DIR
+Environment="UPDATE_AGENT_TOKEN=$UPDATE_AGENT_TOKEN"
+Environment="UPDATE_AGENT_PORT=8102"
+Environment="INSTALL_DIR=/opt/vpn-management"
+Environment="REPO_DIR=/opt/vpn-management/repo"
+Environment="STATE_DIR=/var/lib/vpn-update"
+Environment="UPDATE_SCRIPT=$UPDATE_AGENT_DIR/update.sh"
+Environment="GIT_REMOTE=$UPDATE_GIT_REMOTE"
+Environment="GIT_BRANCH=$UPDATE_GIT_BRANCH"
+Environment="ENV_FILE=/opt/vpn-management/config/.env"
+Environment="COMPOSE_FILE=/opt/vpn-management/docker-compose.yml"
+ExecStart=$UPDATE_AGENT_DIR/venv/bin/gunicorn -w 2 -t 300 -b 0.0.0.0:8102 app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Start service (optional component — never abort the install if it fails)
+    systemctl daemon-reload || true
+    systemctl enable update-agent 2>/dev/null || true
+    systemctl restart update-agent 2>/dev/null || log_warn "Update Agent did not start"
+
+    log_success "Update Agent installed"
+}
+
 install_docker() {
     if command -v docker &> /dev/null; then
         log_success "Docker already installed: $(docker --version)"
@@ -648,6 +713,9 @@ setup_letsencrypt() {
 create_env_file() {
     log_info "Creating environment configuration..."
 
+    # Ensure agent tokens exist even on code paths that didn't pre-generate them.
+    UPDATE_AGENT_TOKEN=${UPDATE_AGENT_TOKEN:-$(generate_secret)}
+
     cat > ${INSTALL_DIR}/config/.env << EOF
 # ============================================
 # VPN Management System - Configuration
@@ -716,6 +784,11 @@ NAT_AGENT_TOKEN=${NAT_AGENT_TOKEN}
 # ==================== IPsec Agent ====================
 IPSEC_AGENT_URL=http://172.17.0.1:8101
 IPSEC_AGENT_TOKEN=${IPSEC_AGENT_TOKEN}
+
+# ==================== Update Agent ====================
+# Host systemd service reachable from the backend via host-gateway.
+UPDATE_AGENT_URL=http://update-agent:8102
+UPDATE_AGENT_TOKEN=${UPDATE_AGENT_TOKEN}
 
 # ==================== Traefik ====================
 TRAEFIK_ACME_EMAIL=${ACME_EMAIL:-${ADMIN_EMAIL}}
@@ -813,6 +886,8 @@ ${POSTGRES_SERVICE}
       - NAT_AGENT_TOKEN=\${NAT_AGENT_TOKEN}
       - IPSEC_AGENT_URL=http://${SERVER_IP}:8101
       - IPSEC_AGENT_TOKEN=\${IPSEC_AGENT_TOKEN}
+      - UPDATE_AGENT_URL=http://${SERVER_IP}:8102
+      - UPDATE_AGENT_TOKEN=\${UPDATE_AGENT_TOKEN}
       - TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic
       - TRAEFIK_API_URL=http://traefik:8080
       - TRAEFIK_ACME_EMAIL=\${TRAEFIK_ACME_EMAIL}
@@ -850,6 +925,7 @@ ${POSTGRES_SERVICE}
       - ${INSTALL_DIR}/data/backend:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${INSTALL_DIR}/docker-compose.yml:/app/docker-compose.yml
+      - ${INSTALL_DIR}/VERSION:/app/VERSION:ro
       - traefik_dynamic:/etc/traefik/dynamic
       - traefik_acme:/acme
       - traefik_certs_manual:/certs/manual
@@ -924,6 +1000,7 @@ ${POSTGRES_SERVICE}
     volumes:
       - ${INSTALL_DIR}/docker/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ${INSTALL_DIR}/docker/traefik/dynamic/internal.yml:/etc/traefik/dynamic/internal.yml:ro
+      - ${INSTALL_DIR}/docker/traefik/dynamic/update-agent.yml:/etc/traefik/dynamic/update-agent.yml:ro
       - traefik_dynamic:/etc/traefik/dynamic
       - traefik_acme:/acme
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -991,6 +1068,52 @@ create_traefik_config() {
         exit 1
     fi
 
+    # ---- Update Agent route (resilient progress polling) ----
+    # Exposes ONLY GET /update-agent/status, forwarded to the host update-agent
+    # with the agent token injected by Traefik. This lets the SPA poll update
+    # progress even while the backend/frontend containers are being rebuilt.
+    # The privileged POST /update stays reachable only via the authenticated
+    # backend (admin JWT) — it is intentionally NOT routed here.
+    local ua_ip="${SERVER_IP:-$(ip -4 addr show scope global | grep inet | head -1 | awk '{print $2}' | cut -d/ -f1)}"
+    ua_ip="${ua_ip:-172.17.0.1}"
+    local ua_token="${UPDATE_AGENT_TOKEN}"
+    [ -z "$ua_token" ] && [ -f /opt/vpn-management/update-agent.token ] && ua_token="$(cat /opt/vpn-management/update-agent.token)"
+
+    cat > "${INSTALL_DIR}/docker/traefik/dynamic/update-agent.yml" << EOF
+# Traefik Dynamic Configuration - Update Agent (auto-generated by install.sh)
+# Read-only status polling that survives backend/frontend restarts.
+http:
+  routers:
+    update-agent-status:
+      rule: "PathPrefix(\`/update-agent/status\`) && Method(\`GET\`)"
+      entrypoints: [websecure]
+      tls: {}
+      priority: 100
+      service: update-agent
+      middlewares: [update-agent-strip, update-agent-auth]
+    update-agent-status-http:
+      rule: "PathPrefix(\`/update-agent/status\`) && Method(\`GET\`)"
+      entrypoints: [web]
+      priority: 100
+      service: update-agent
+      middlewares: [update-agent-strip, update-agent-auth]
+  services:
+    update-agent:
+      loadBalancer:
+        servers:
+          - url: "http://${ua_ip}:8102"
+  middlewares:
+    update-agent-strip:
+      stripPrefix:
+        prefixes: ["/update-agent"]
+    update-agent-auth:
+      headers:
+        customRequestHeaders:
+          Authorization: "Bearer ${ua_token}"
+EOF
+    chmod 600 "${INSTALL_DIR}/docker/traefik/dynamic/update-agent.yml"
+    log_success "Update Agent route configured (${ua_ip}:8102)"
+
     log_success "Traefik configuration ready"
 }
 
@@ -1022,6 +1145,12 @@ copy_application_files() {
     else
         log_error "Docker directory not found at ${SCRIPT_DIR}/docker"
         exit 1
+    fi
+
+    # Copy VERSION file (mounted into backend; source of truth for the UI badge)
+    if [ -f "${SCRIPT_DIR}/VERSION" ]; then
+        cp "${SCRIPT_DIR}/VERSION" ${INSTALL_DIR}/VERSION
+        log_info "  Copied VERSION ($(cat ${SCRIPT_DIR}/VERSION | tr -d '[:space:]'))"
     fi
 
     log_success "Application files copied"
@@ -1240,6 +1369,7 @@ run_upgrade_steps() {
             rsync -a --delete --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' "${SCRIPT_DIR}/backend/" "${INSTALL_DIR}/backend/" >>"$UPGRADE_LOG" 2>&1
             echo 30; echo "XXX"; echo "Updating docker configs..."; echo "XXX"
             rsync -a --delete "${SCRIPT_DIR}/docker/" "${INSTALL_DIR}/docker/" >>"$UPGRADE_LOG" 2>&1
+            [ -f "${SCRIPT_DIR}/VERSION" ] && cp "${SCRIPT_DIR}/VERSION" "${INSTALL_DIR}/VERSION"
             run_step 35 "Updating Traefik configuration..." create_traefik_config
             run_step 40 "Updating StrongSwan..." install_strongswan
             run_step 45 "Configuring IPsec sysctl..." configure_ipsec_sysctl
@@ -1258,6 +1388,10 @@ run_upgrade_steps() {
                 fi
                 install_ipsec_agent >>"$UPGRADE_LOG" 2>&1
             fi
+            echo 52; echo "XXX"; echo "Updating Update Agent..."; echo "XXX"
+            # Preserve the existing token so the backend's configured token stays valid.
+            [ -f /opt/vpn-management/update-agent.token ] && UPDATE_AGENT_TOKEN=$(cat /opt/vpn-management/update-agent.token)
+            install_update_agent >>"$UPGRADE_LOG" 2>&1 || true
             echo 60; echo "XXX"; echo "Rebuilding Docker images (this may take a few minutes)..."; echo "XXX"
             cd "${INSTALL_DIR}" && docker compose build --no-cache nat-agent backend frontend openvpn >>"$UPGRADE_LOG" 2>&1
             run_step 80 "Fixing permissions..." fix_permissions
@@ -1296,6 +1430,7 @@ run_upgrade_steps() {
         rsync -a --delete --exclude='node_modules' --exclude='dist' --exclude='.next' "${SCRIPT_DIR}/frontend/" "${INSTALL_DIR}/frontend/"
         rsync -a --delete --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' "${SCRIPT_DIR}/backend/" "${INSTALL_DIR}/backend/"
         rsync -a --delete "${SCRIPT_DIR}/docker/" "${INSTALL_DIR}/docker/"
+        [ -f "${SCRIPT_DIR}/VERSION" ] && cp "${SCRIPT_DIR}/VERSION" "${INSTALL_DIR}/VERSION"
         log_success "Files updated"
 
         log_info "Updating Traefik configuration..."
@@ -1321,6 +1456,10 @@ run_upgrade_steps() {
             fi
             install_ipsec_agent
         fi
+
+        log_info "Updating Update Agent..."
+        [ -f /opt/vpn-management/update-agent.token ] && UPDATE_AGENT_TOKEN=$(cat /opt/vpn-management/update-agent.token)
+        install_update_agent || log_warn "Update Agent update failed"
 
         log_info "Rebuilding Docker images..."
         cd "${INSTALL_DIR}"
@@ -1418,6 +1557,7 @@ run_fresh_install_steps() {
             run_step 65 "Copying application files..." copy_application_files
             run_step 70 "Configuring Traefik..." create_traefik_config
             run_step 75 "Installing IPsec Agent..." install_ipsec_agent
+            run_step 78 "Installing Update Agent..." install_update_agent
             run_step 85 "Building and starting services (this may take a few minutes)..." start_services
             run_step 95 "Fixing permissions..." fix_permissions
             setup_letsencrypt >>"$INSTALL_LOG" 2>&1 || true
@@ -1455,6 +1595,7 @@ run_fresh_install_steps() {
         copy_application_files
         create_traefik_config
         install_ipsec_agent
+        install_update_agent
         start_services
         fix_permissions
         setup_letsencrypt
@@ -1615,6 +1756,7 @@ main() {
     REDIS_PASSWORD=$(generate_password)
     NAT_AGENT_TOKEN=$(generate_secret)
     IPSEC_AGENT_TOKEN=$(generate_secret)
+    UPDATE_AGENT_TOKEN=$(generate_secret)
     ADMIN_EMAIL="admin@${DOMAIN}"
 
     # ---- Configuration Summary ----

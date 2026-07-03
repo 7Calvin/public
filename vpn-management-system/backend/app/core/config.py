@@ -1,10 +1,30 @@
 """
 Application Settings and Configuration
 """
+import os
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import PostgresDsn, field_validator, computed_field
 from pydantic_core import MultiHostUrl
+
+
+def _read_version() -> str:
+    """Read the application version from the VERSION file.
+
+    The file is the single source of truth for the running version. It is
+    mounted into the container (``./VERSION`` -> ``/app/VERSION``) and rewritten
+    by the update-agent after a successful update. Falls back to the ``VERSION``
+    env var and finally to a hardcoded default when the file is absent.
+    """
+    for path in ("/app/VERSION", os.path.join(os.path.dirname(__file__), "..", "..", "..", "VERSION")):
+        try:
+            with open(path, "r") as f:
+                value = f.read().strip()
+                if value:
+                    return value
+        except OSError:
+            continue
+    return os.environ.get("VERSION", "1.0.0")
 
 
 class Settings(BaseSettings):
@@ -19,7 +39,7 @@ class Settings(BaseSettings):
 
     # ==================== General ====================
     PROJECT_NAME: str = "VPN Management System"
-    VERSION: str = "1.0.0"
+    VERSION: str = _read_version()
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
     SECRET_KEY: str = "change-me-in-production"
@@ -147,6 +167,13 @@ class Settings(BaseSettings):
     # ==================== NAT Agent ====================
     NAT_AGENT_URL: str = "http://127.0.0.1:8100"
     NAT_AGENT_TOKEN: str = "changeme-nat-token"
+
+    # ==================== Update Agent ====================
+    # Host-side systemd service that orchestrates full-system updates. It lives
+    # OUTSIDE the docker-compose lifecycle so a rebuild/restart of the backend or
+    # frontend cannot kill an in-flight update. The backend only proxies to it.
+    UPDATE_AGENT_URL: str = "http://update-agent:8102"
+    UPDATE_AGENT_TOKEN: str = "changeme-update-token"
 
     # ==================== Email ====================
     SMTP_ENABLED: bool = False

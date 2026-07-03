@@ -14,8 +14,9 @@ import {
   Link2,
   Globe,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { systemApi } from '@/api/client'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, adminOnly: false },
@@ -32,6 +33,14 @@ export default function DashboardLayout() {
   const { user, logout } = useAuthStore()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [version, setVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    systemApi
+      .version()
+      .then((res) => setVersion(res.data?.current ?? null))
+      .catch(() => setVersion(null))
+  }, [])
 
   // Filter navigation based on user role
   const visibleNavigation = navigation.filter(
@@ -120,6 +129,17 @@ export default function DashboardLayout() {
               <LogOut className="h-4 w-4" />
               Logout
             </Button>
+
+            {/* App version */}
+            {version && (
+              <Link
+                to="/settings"
+                className="mt-3 block text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+                title="Ver atualizações do sistema"
+              >
+                v{version}
+              </Link>
+            )}
           </div>
         </div>
       </aside>
