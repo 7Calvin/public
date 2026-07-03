@@ -32,6 +32,7 @@ AUTH_TOKEN = os.environ.get("UPDATE_AGENT_TOKEN", "changeme-update-token")
 INSTALL_DIR = os.environ.get("INSTALL_DIR", "/opt/vpn-management")
 REPO_DIR = os.environ.get("REPO_DIR", os.path.join(INSTALL_DIR, "repo"))
 REPO_SUBDIR = os.environ.get("REPO_SUBDIR", "vpn-management-system")
+GIT_REMOTE = os.environ.get("GIT_REMOTE", "https://github.com/7Calvin/public.git")
 GIT_BRANCH = os.environ.get("GIT_BRANCH", "main")
 STATE_DIR = os.environ.get("STATE_DIR", "/var/lib/vpn-update")
 STATUS_FILE = os.path.join(STATE_DIR, "status.json")
@@ -115,33 +116,49 @@ def latest():
     if not check_auth():
         return jsonify({"error": "unauthorized"}), 401
 
+    # Lazily clone the repo on first check so "Verificar atualizações" works
+    # immediately instead of requiring a first update to bootstrap the checkout.
     if not os.path.isdir(os.path.join(REPO_DIR, ".git")):
-        return jsonify({
-            "error": "repo not initialized on host yet; run an update once to clone it",
-            "update_available": False,
-        }), 200
+        try:
+            r = subprocess.run(
+                ["git", "clone", "--no-checkout", GIT_REMOTE, REPO_DIR],
+                capture_output=True, text=True, timeout=300,
+            )
+            if r.returncode != 0:
+                return jsonify({
+                    "error": f"could not clone source repo: {r.stderr.strip()}",
+                    "update_available": False,
+                }), 200
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"error": f"clone failed: {e}", "update_available": False}), 200
 
     code, _, err = _git("fetch", "--tags", "--prune", "origin")
     if code != 0:
         return jsonify({"error": f"git fetch failed: {err}", "update_available": False}), 200
 
-    cur_sha = _git("rev-parse", "HEAD")[1]
+    # Compare the INSTALLED version (the VERSION file the running system uses)
+    # against the version at the latest available ref. The repo checkout's HEAD
+    # is NOT a reliable proxy for what's installed (a fresh clone sits at the
+    # newest commit), so we read the VERSION file out of the target ref instead.
+    installed = current_version()
     latest_tag = _git("tag", "-l", "v*", "--sort=-v:refname")[1].splitlines()
     latest_tag = latest_tag[0] if latest_tag else None
-    remote_head = _git("rev-parse", f"origin/{GIT_BRANCH}")[1]
 
     if latest_tag:
-        tag_sha = _git("rev-list", "-n1", latest_tag)[1]
-        update_available = tag_sha != cur_sha
         target = latest_tag
     else:
-        update_available = bool(remote_head) and remote_head != cur_sha
         target = f"origin/{GIT_BRANCH}"
 
+    rc, latest_ver, _ = _git("show", f"{target}:{REPO_SUBDIR}/VERSION")
+    latest_ver = latest_ver.strip() if rc == 0 and latest_ver.strip() else None
+
+    # Different version at the target ref => an update is available.
+    update_available = bool(latest_ver) and bool(installed) and latest_ver != installed
+
     return jsonify({
-        "current": current_version(),
-        "current_sha": (cur_sha or "")[:8],
-        "latest": latest_tag,
+        "current": installed,
+        "latest": latest_ver or latest_tag,
+        "latest_tag": latest_tag,
         "target": target,
         "update_available": update_available,
     })

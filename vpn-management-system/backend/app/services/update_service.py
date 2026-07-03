@@ -30,8 +30,11 @@ class UpdateService:
         return {"Authorization": f"Bearer {self.agent_token}"}
 
     async def _get(self, path: str, timeout: float = 15.0) -> Tuple[bool, Any]:
+        # Short connect timeout so an unreachable/firewalled agent fails fast
+        # instead of hanging the whole read window (the "spins forever" symptom).
+        t = httpx.Timeout(timeout, connect=5.0)
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=t) as client:
                 resp = await client.get(f"{self.agent_url}{path}", headers=self._headers())
                 if resp.status_code == 401:
                     return False, "Unauthorized - check UPDATE_AGENT_TOKEN"
@@ -48,8 +51,9 @@ class UpdateService:
 
     async def _post(self, path: str, payload: Optional[Dict[str, Any]] = None,
                     timeout: float = 30.0) -> Tuple[bool, Any]:
+        t = httpx.Timeout(timeout, connect=5.0)
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=t) as client:
                 resp = await client.post(
                     f"{self.agent_url}{path}", headers=self._headers(), json=payload or {}
                 )

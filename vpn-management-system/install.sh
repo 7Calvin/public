@@ -660,6 +660,8 @@ configure_firewall() {
     ufw allow from 172.20.0.0/16 to any port 8100 comment 'NAT Agent VPN Network'
     ufw allow from 172.17.0.0/16 to any port 8101 comment 'IPsec Agent'
     ufw allow from 172.20.0.0/16 to any port 8101 comment 'IPsec Agent VPN Network'
+    ufw allow from 172.17.0.0/16 to any port 8102 comment 'Update Agent'
+    ufw allow from 172.20.0.0/16 to any port 8102 comment 'Update Agent VPN Network'
 
     # Enable IP forwarding + IPsec sysctl tweaks + ESP protocol
     configure_ipsec_sysctl
@@ -1232,12 +1234,14 @@ fix_permissions() {
         log_warn "  Backend user cannot write to /app/data"
     fi
 
-    # 6. Configure UFW for NAT agent (if UFW is enabled)
+    # 6. Configure UFW for host agents (if UFW is enabled)
     if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-        log_info "  Configuring UFW for NAT agent..."
+        log_info "  Configuring UFW for host agents..."
         ufw allow from 172.17.0.0/16 to any port 8100 comment 'NAT Agent for Docker' >/dev/null 2>&1 || true
         ufw allow from 172.20.0.0/16 to any port 8100 comment 'NAT Agent for VPN Network' >/dev/null 2>&1 || true
-        log_success "  UFW configured for NAT agent"
+        ufw allow from 172.17.0.0/16 to any port 8102 comment 'Update Agent for Docker' >/dev/null 2>&1 || true
+        ufw allow from 172.20.0.0/16 to any port 8102 comment 'Update Agent for VPN Network' >/dev/null 2>&1 || true
+        log_success "  UFW configured for host agents"
     fi
 
     # 7. Create VPN_RULES chain for firewall status (if iptables is available)
