@@ -136,6 +136,15 @@ ifconfig-pool-persist ipp.txt
 # Keepalive
 keepalive 10 120
 
+# Anti-queda na renegociacao TLS de 1h (redes/dispositivos instaveis)
+# reneg-sec 0 desliga a renegociacao por tempo, que falhava e derrubava a sessao em ~1h.
+# As chaves ainda rotacionam a cada reconexao. Trade-off aceitavel com AES-256-GCM.
+# NAO usar tun-mtu/push tun-mtu: quebra o canal de dados (tunel sobe mas nada e encaminhado).
+mssfix 1360
+explicit-exit-notify 1
+reneg-sec 0
+push "reneg-sec 0"
+
 # Encryption
 cipher AES-256-GCM
 auth SHA256
