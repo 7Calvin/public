@@ -39,6 +39,9 @@ class TraefikService:
         self.dynamic_dir = getattr(settings, 'TRAEFIK_DYNAMIC_DIR', '/etc/traefik/dynamic')
         self.traefik_api_url = getattr(settings, 'TRAEFIK_API_URL', 'http://traefik:8080')
         self.acme_storage = getattr(settings, 'TRAEFIK_ACME_STORAGE', '/acme/acme.json')
+        # Container name for docker-exec fallbacks (acme.json is 600/root-owned, so the
+        # non-root backend reads/writes it through the traefik container).
+        self.traefik_container = getattr(settings, 'TRAEFIK_CONTAINER', 'vpn-traefik')
 
     # ==================== CRUD ====================
 
@@ -447,7 +450,7 @@ class TraefikService:
         # Fallback: read via docker exec traefik (file is 600 root-owned)
         try:
             result = subprocess.run(
-                ["docker", "exec", "traefik", "cat", "/acme/acme.json"],
+                ["docker", "exec", self.traefik_container, "cat", "/acme/acme.json"],
                 capture_output=True,
                 timeout=10,
             )
@@ -479,7 +482,7 @@ class TraefikService:
         try:
             result = subprocess.run(
                 [
-                    "docker", "exec", "-i", "traefik",
+                    "docker", "exec", "-i", self.traefik_container,
                     "sh", "-c", "cat > /acme/acme.json && chmod 600 /acme/acme.json",
                 ],
                 input=json_content.encode(),
