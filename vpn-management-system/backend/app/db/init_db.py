@@ -167,6 +167,29 @@ async def create_default_firewall_rules(db: AsyncSession) -> bool:
         "applies_to_service_accounts": True,
     })
 
+    # allow-internal-network: enabled by default when an internal/NAT network is
+    # configured, so VPN clients can reach the private subnet behind this server out
+    # of the box (mirrors the Firewall page "Allow Private Network Access" quick rule).
+    # Without this DB rule, apply_rules() clears the allow-list on every sync and the
+    # internal network becomes unreachable (VPN_FILTER drops it under 10.0.0.0/8).
+    internal_networks = None
+    if push_routes:
+        internal_networks = ",".join(push_routes)
+    elif settings.NAT_GATEWAY_NETWORK:
+        internal_networks = settings.NAT_GATEWAY_NETWORK
+    if internal_networks:
+        default_rules_defs.append({
+            "name": "allow-internal-network",
+            "description": "Allow access to internal network (from push routes)",
+            "action": FirewallAction.ACCEPT,
+            "protocol": ProtocolType.ALL,
+            "destination_network": internal_networks,
+            "priority": 50,
+            "is_system_rule": False,
+            "applies_to_human_users": True,
+            "applies_to_service_accounts": True,
+        })
+
     created_count = 0
 
     # Check each rule and create if missing
