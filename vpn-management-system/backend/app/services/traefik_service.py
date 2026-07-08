@@ -905,72 +905,78 @@ class TraefikService:
         return {"domain": domain, "ip": ip, "ssl_enabled": ssl_enabled}
 
     def update_management_domain(self, new_domain: str) -> Tuple[bool, str]:
-        """Update the management domain in docker-compose.yml"""
+        """
+        Change the management-panel domain.
+
+        The domain is the ``DOMAIN`` variable in .env; the compose Traefik labels use
+        the ``${DOMAIN}`` placeholder, resolved at container-create time. So we update
+        .env and recreate the frontend so Traefik picks up the new ``Host(`${DOMAIN}`)``
+        rule and requests a certificate for the new domain.
+
+        Only the frontend is recreated — the backend stays up (its ``/api`` is served by
+        the no-Host ``backend-ip`` router on any hostname), so this request isn't killed
+        mid-flight and the ``*-ip`` catch-all routers keep the panel reachable by IP the
+        whole time (a not-yet-ready domain can't lock you out).
+
+        The backend doesn't mount .env, so the file edit runs in a throwaway container
+        that bind-mounts the install dir.
+        """
         import re
         import subprocess
 
+        new_domain = (new_domain or "").strip().lower().rstrip(".")
+        if not re.match(r'^(?=.{1,253}$)([a-z0-9](-*[a-z0-9])*\.)+[a-z]{2,}$', new_domain):
+            return False, "Invalid domain name"
+
+        old_domain = os.environ.get("DOMAIN", "").strip()
+        if old_domain == new_domain:
+            return True, "Domain is already set to this value"
+
+        compose_dir = os.environ.get("COMPOSE_PROJECT_DIR", "/opt/vpn-management")
+        compose_file = os.path.join(compose_dir, "docker-compose.yml")
+        env_file = os.path.join(compose_dir, "config", ".env")
+
         try:
-            with open(self.COMPOSE_FILE, "r") as f:
-                content = f.read()
-
-            # Find current domain from frontend router
-            match = re.search(
-                r'traefik\.http\.routers\.frontend\.rule=Host\(`([^`]+)`\)',
-                content,
+            # 1. Update DOMAIN in the host .env via a throwaway container (the backend
+            #    doesn't mount .env). redis:7-alpine is part of the core stack, so this
+            #    needs no image pull. Uses printf/sed via busybox sh.
+            edit = (
+                "if grep -q '^DOMAIN=' /host/config/.env; then "
+                f"sed -i 's|^DOMAIN=.*|DOMAIN={new_domain}|' /host/config/.env; "
+                f"else printf 'DOMAIN=%s\\n' '{new_domain}' >> /host/config/.env; fi"
             )
-            if not match:
-                return False, "Could not find current domain in docker-compose.yml"
+            r = subprocess.run(
+                ["docker", "run", "--rm", "--entrypoint", "sh",
+                 "-v", f"{compose_dir}:/host", "redis:7-alpine", "-c", edit],
+                capture_output=True, text=True, timeout=60,
+            )
+            if r.returncode != 0:
+                return False, f"Failed to update .env: {(r.stderr or r.stdout).strip() or 'unknown error'}"
 
-            old_domain = match.group(1)
-            if old_domain == new_domain:
-                return True, "Domain is already set to this value"
+            # 2. Reflect it in this running backend right away, so the panel shows the
+            #    new domain without recreating the backend (which would kill this request).
+            os.environ["DOMAIN"] = new_domain
 
-            # Replace all occurrences of old domain with new domain in labels
-            updated = content.replace(
-                f"Host(`{old_domain}`)",
-                f"Host(`{new_domain}`)",
+            # 3. Recreate the frontend so Traefik switches to the new Host rule and
+            #    issues a cert. Detached so this response returns first.
+            recreate = (
+                f"docker compose --env-file {env_file} -f {compose_file} "
+                f"--project-directory {compose_dir} up -d --force-recreate frontend"
+            )
+            subprocess.Popen(
+                ["sh", "-c", recreate],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
-            # Also update VITE_API_URL if present
-            updated = updated.replace(
-                f"VITE_API_URL=https://{old_domain}",
-                f"VITE_API_URL=https://{new_domain}",
-            )
-
-            with open(self.COMPOSE_FILE, "w") as f:
-                f.write(updated)
-
-            logger.info(f"Management domain updated: {old_domain} -> {new_domain}")
-
-            # Try to trigger container recreation via docker CLI
-            try:
-                compose_dir = os.environ.get("COMPOSE_PROJECT_DIR", "/opt/vpn-management")
-                compose_file = os.path.join(compose_dir, "docker-compose.yml")
-                subprocess.Popen(
-                    [
-                        "docker", "compose",
-                        "-f", compose_file,
-                        "--project-directory", compose_dir,
-                        "up", "-d", "--no-deps", "--force-recreate",
-                        "vpn-backend", "vpn-frontend",
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception as e:
-                logger.warning(f"Could not auto-restart services: {e}")
-                return True, (
-                    f"Domain updated from '{old_domain}' to '{new_domain}'. "
-                    "Run 'docker compose up -d' to apply."
-                )
-
+            logger.info(f"Management domain changed: {old_domain or '-'} -> {new_domain}")
             return True, (
-                f"Domain updated from '{old_domain}' to '{new_domain}'. "
-                "Services are restarting..."
+                f"Domain updated from '{old_domain or '—'}' to '{new_domain}'. "
+                "Traefik is switching routing and requesting a new certificate "
+                "(can take up to a minute). If the new domain isn't ready yet, the "
+                "panel stays reachable via its IP."
             )
 
-        except PermissionError:
-            return False, "Permission denied writing to docker-compose.yml"
         except Exception as e:
             logger.error(f"Failed to update management domain: {e}")
             return False, str(e)
