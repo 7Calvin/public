@@ -42,6 +42,8 @@ def get_server_config() -> dict:
         "vpn_network": settings.OPENVPN_NETWORK,
         "vpn_netmask": settings.OPENVPN_NETMASK,
         "dns_servers": [settings.OPENVPN_DNS_1, settings.OPENVPN_DNS_2],
+        "internal_dns_server": "",
+        "split_dns_domains": [],
         "push_routes": [],
         "redirect_gateway": True,
         "compression": False,
@@ -51,6 +53,17 @@ def get_server_config() -> dict:
         "keepalive_interval": 10,
         "keepalive_timeout": 120,
     }
+
+
+def save_server_config(config: dict) -> bool:
+    """Persist server config to file (single source of truth for get_server_config)."""
+    try:
+        SERVER_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SERVER_CONFIG_FILE.write_text(json.dumps(config, indent=2))
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save server config: {e}")
+        return False
 
 
 class VPNService:

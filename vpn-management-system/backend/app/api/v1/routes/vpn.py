@@ -8,7 +8,7 @@ from uuid import UUID
 
 from app.db.session import get_db
 from app.models.user import User
-from app.services.vpn_service import VPNService
+from app.services.vpn_service import VPNService, get_server_config, save_server_config
 from app.dependencies.auth import get_current_active_user, require_admin
 from app.schemas.vpn import (
     VPNProfileCreate,
@@ -392,48 +392,9 @@ async def disconnect_vpn_client(
 # ==================== Server Configuration Routes ====================
 
 from app.schemas.vpn import VPNServerConfig, VPNServerConfigUpdate
-import json
-from pathlib import Path
 
-CONFIG_FILE = Path("/app/data/server_config.json")
-
-
-def get_server_config() -> dict:
-    """Load server config from file or return defaults from settings"""
-    if CONFIG_FILE.exists():
-        try:
-            return json.loads(CONFIG_FILE.read_text())
-        except Exception:
-            pass
-
-    # Return defaults from settings
-    return {
-        "server_host": settings.OPENVPN_HOST,
-        "server_port": settings.OPENVPN_PORT,
-        "protocol": settings.OPENVPN_PROTOCOL,
-        "vpn_network": settings.OPENVPN_NETWORK,
-        "vpn_netmask": settings.OPENVPN_NETMASK,
-        "dns_servers": [settings.OPENVPN_DNS_1, settings.OPENVPN_DNS_2],
-        "push_routes": [],
-        "compression": False,
-        "client_to_client": False,
-        "duplicate_cn": False,
-        "max_clients": 100,
-        "keepalive_interval": 10,
-        "keepalive_timeout": 120,
-    }
-
-
-def save_server_config(config: dict) -> bool:
-    """Save server config to file"""
-    try:
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(json.dumps(config, indent=2))
-        return True
-    except Exception as e:
-        import logging
-        logging.error(f"Failed to save server config: {e}")
-        return False
+# get_server_config / save_server_config are imported from app.services.vpn_service
+# (single source of truth — see the import at the top of this module).
 
 
 async def has_vpn_profiles(db: AsyncSession) -> bool:
@@ -471,6 +432,19 @@ async def update_vpn_server_config(
     After saving, the server will automatically start if not running.
     """
     current_config = get_server_config()
+
+    # Snapshot the values that drive server.conf so we only rewrite it / restart
+    # OpenVPN when they actually change — a plain settings save (e.g. max_clients)
+    # must not kick every connected client off.
+    def _conf_keys(cfg: dict) -> dict:
+        return {
+            "redirect_gateway": cfg.get("redirect_gateway", True),
+            "dns_servers": list(cfg.get("dns_servers", [])),
+            "internal_dns_server": cfg.get("internal_dns_server", "") or "",
+            "split_dns_domains": list(cfg.get("split_dns_domains", [])),
+        }
+    old_conf = _conf_keys(current_config)
+
     profiles_exist = await has_vpn_profiles(db)
 
     # Check if trying to change network when profiles exist
@@ -497,24 +471,29 @@ async def update_vpn_server_config(
     import logging
     conf_changed = False
 
-    # Update redirect-gateway line in server.conf if changed
-    if data.redirect_gateway is not None:
-        success, error = await vpn_service.update_server_conf_redirect_gateway(data.redirect_gateway)
+    # Apply server.conf changes only for values that actually changed.
+    new_conf = _conf_keys(current_config)
+
+    # redirect-gateway line
+    if new_conf["redirect_gateway"] != old_conf["redirect_gateway"]:
+        success, error = await vpn_service.update_server_conf_redirect_gateway(
+            new_conf["redirect_gateway"]
+        )
         if not success:
             logging.warning(f"Failed to update redirect-gateway: {error}")
         else:
             conf_changed = True
 
-    # Re-apply the DNS / split-DNS push block when any DNS-relevant field changed.
-    # Uses the merged config so full-tunnel vs split-tunnel is derived from the
-    # effective redirect_gateway value (fixes public-DNS-in-split-tunnel bug).
-    dns_relevant = ("dns_servers", "internal_dns_server", "split_dns_domains", "redirect_gateway")
-    if any(getattr(data, f) is not None for f in dns_relevant):
+    # DNS / split-DNS push block. Depends on redirect_gateway too (full vs split
+    # tunnel), so re-apply whenever any of these values changed. Deriving full vs
+    # split from the effective redirect_gateway is what fixes the public-DNS-in-
+    # split-tunnel bug.
+    if new_conf != old_conf:
         success, error = await vpn_service.update_server_conf_dns(
-            dns_servers=current_config.get("dns_servers", []),
-            redirect_gateway=current_config.get("redirect_gateway", True),
-            internal_dns_server=current_config.get("internal_dns_server"),
-            split_dns_domains=current_config.get("split_dns_domains", []),
+            dns_servers=new_conf["dns_servers"],
+            redirect_gateway=new_conf["redirect_gateway"],
+            internal_dns_server=new_conf["internal_dns_server"],
+            split_dns_domains=new_conf["split_dns_domains"],
         )
         if not success:
             logging.warning(f"Failed to update DNS push: {error}")
