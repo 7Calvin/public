@@ -190,6 +190,48 @@ class VPNService:
             logger.error(f"Profile revocation failed: {e}")
             return False
 
+    @staticmethod
+    def _client_dns_directives(server_config: dict) -> list:
+        """
+        DNS directives for a client .ovpn, mode-aware (mirrors update_server_conf_dns).
+
+        Full tunnel (redirect_gateway=True): bake the public dns_servers into the
+        profile (all traffic + DNS goes through the VPN). If split-DNS is configured,
+        also add DOMAIN-ROUTE so those domains resolve via the internal DNS.
+
+        Split tunnel (redirect_gateway=False): do NOT bake public DNS — that would
+        hijack the client's resolver toward servers with no route through the tunnel
+        ("ping IP works, name resolution fails"). Only add split-DNS (internal server
+        + route + DOMAIN/DOMAIN-ROUTE) when configured; otherwise the client keeps its
+        own resolver.
+        """
+        dns_servers = server_config.get("dns_servers", []) or []
+        redirect_gateway = server_config.get("redirect_gateway", True)
+        internal_dns = (server_config.get("internal_dns_server") or "").strip()
+        split_domains = [
+            str(d).strip().lstrip(".")
+            for d in (server_config.get("split_dns_domains") or [])
+            if str(d).strip()
+        ]
+        lines = []
+        if redirect_gateway:
+            for dns in dns_servers:
+                lines.append(f"dhcp-option DNS {dns}")
+            if internal_dns and split_domains:
+                lines.append(f"dhcp-option DNS {internal_dns}")
+                lines.append(f"dhcp-option DOMAIN {split_domains[0]}")
+                for d in split_domains:
+                    lines.append(f"dhcp-option DOMAIN-ROUTE {d}")
+        else:
+            if internal_dns:
+                lines.append(f"route {internal_dns} 255.255.255.255")
+                lines.append(f"dhcp-option DNS {internal_dns}")
+                if split_domains:
+                    lines.append(f"dhcp-option DOMAIN {split_domains[0]}")
+                    for d in split_domains:
+                        lines.append(f"dhcp-option DOMAIN-ROUTE {d}")
+        return lines
+
     async def generate_ovpn_config(self, profile: VPNProfile) -> str:
         """Generate .ovpn configuration file content"""
         user = await self._get_user_by_profile(profile)
@@ -230,11 +272,11 @@ class VPNService:
             "",
         ]
 
-        # Add DNS servers
-        if dns_servers:
+        # Add DNS servers (mode-aware; see _client_dns_directives)
+        dns_lines = self._client_dns_directives(server_config)
+        if dns_lines:
             config_lines.append("# DNS Configuration")
-            for dns in dns_servers:
-                config_lines.append(f"dhcp-option DNS {dns}")
+            config_lines.extend(dns_lines)
             config_lines.append("")
 
         # Add routes
@@ -1037,11 +1079,11 @@ G4AZmjLbG+8UYeKnGr4kMzYrq4rFjLVlzA==
             "",
         ]
 
-        # Add DNS servers
-        if dns_servers:
+        # Add DNS servers (mode-aware; see _client_dns_directives)
+        dns_lines = self._client_dns_directives(server_config)
+        if dns_lines:
             config_lines.append("# DNS Configuration")
-            for dns in dns_servers:
-                config_lines.append(f"dhcp-option DNS {dns}")
+            config_lines.extend(dns_lines)
             config_lines.append("")
 
         # Add routes
