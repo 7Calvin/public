@@ -167,6 +167,8 @@ class VPNServerConfig(BaseModel):
     vpn_network: str = Field("10.8.0.0", description="VPN subnet network address")
     vpn_netmask: str = Field("255.255.255.0", description="VPN subnet mask")
     dns_servers: List[str] = Field(default=["8.8.8.8", "1.1.1.1"], description="DNS servers to push to clients")
+    internal_dns_server: Optional[str] = Field(None, description="Internal DNS server reachable through the tunnel (split-DNS)")
+    split_dns_domains: List[str] = Field(default=[], description="Domains resolved via the internal DNS through the tunnel (split-DNS)")
     push_routes: List[str] = Field(default=[], description="Routes to push to clients (CIDR format)")
     redirect_gateway: bool = Field(True, description="Force all client traffic through VPN tunnel")
     compression: bool = Field(False, description="Enable LZ4 compression")
@@ -187,6 +189,31 @@ class VPNServerConfig(BaseModel):
             except ValueError:
                 raise ValueError(f"Invalid DNS server IP: {ip}")
         return v
+
+    @field_validator("internal_dns_server")
+    @classmethod
+    def validate_internal_dns_server(cls, v):
+        # Empty -> "" (persists a cleared value past the route's "is not None" merge guard)
+        if v is None or not str(v).strip():
+            return ""
+        try:
+            ipaddress.ip_address(str(v).strip())
+        except ValueError:
+            raise ValueError(f"Invalid internal DNS server IP: {v}")
+        return str(v).strip()
+
+    @field_validator("split_dns_domains")
+    @classmethod
+    def validate_split_dns_domains(cls, v):
+        cleaned = []
+        for d in v or []:
+            d = str(d).strip().lstrip(".")
+            if not d:
+                continue
+            if " " in d or "/" in d:
+                raise ValueError(f"Invalid domain: {d}")
+            cleaned.append(d)
+        return cleaned
 
     @field_validator("push_routes")
     @classmethod
@@ -216,6 +243,8 @@ class VPNServerConfigUpdate(BaseModel):
     vpn_network: Optional[str] = None
     vpn_netmask: Optional[str] = None
     dns_servers: Optional[List[str]] = None
+    internal_dns_server: Optional[str] = None
+    split_dns_domains: Optional[List[str]] = None
     push_routes: Optional[List[str]] = None
     redirect_gateway: Optional[bool] = None
     compression: Optional[bool] = None
@@ -236,6 +265,34 @@ class VPNServerConfigUpdate(BaseModel):
             except ValueError:
                 raise ValueError(f"Invalid DNS server IP: {ip}")
         return v
+
+    @field_validator("internal_dns_server")
+    @classmethod
+    def validate_internal_dns_server(cls, v):
+        if v is None:
+            return v
+        if not str(v).strip():
+            return ""
+        try:
+            ipaddress.ip_address(str(v).strip())
+        except ValueError:
+            raise ValueError(f"Invalid internal DNS server IP: {v}")
+        return str(v).strip()
+
+    @field_validator("split_dns_domains")
+    @classmethod
+    def validate_split_dns_domains(cls, v):
+        if v is None:
+            return v
+        cleaned = []
+        for d in v:
+            d = str(d).strip().lstrip(".")
+            if not d:
+                continue
+            if " " in d or "/" in d:
+                raise ValueError(f"Invalid domain: {d}")
+            cleaned.append(d)
+        return cleaned
 
     @field_validator("push_routes")
     @classmethod

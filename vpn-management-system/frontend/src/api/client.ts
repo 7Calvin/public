@@ -181,7 +181,10 @@ export const vpnApi = {
     vpn_network?: string
     vpn_netmask?: string
     dns_servers?: string[]
+    internal_dns_server?: string | null
+    split_dns_domains?: string[]
     push_routes?: string[]
+    redirect_gateway?: boolean
     compression?: boolean
     client_to_client?: boolean
     duplicate_cn?: boolean

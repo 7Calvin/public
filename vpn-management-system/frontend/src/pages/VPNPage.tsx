@@ -19,6 +19,7 @@ export default function VPNPage() {
   // Server config state
   const [configForm, setConfigForm] = useState<Partial<VPNServerConfig>>({})
   const [newDns, setNewDns] = useState('')
+  const [newSplitDomain, setNewSplitDomain] = useState('')
   const [newRoute, setNewRoute] = useState('')
 
   // Server status
@@ -132,6 +133,24 @@ export default function VPNPage() {
     setConfigForm({
       ...configForm,
       dns_servers: configForm.dns_servers?.filter((d) => d !== dns) || [],
+    })
+  }
+
+  const addSplitDomain = () => {
+    const domain = newSplitDomain.trim().replace(/^\.+/, '')
+    if (domain && !configForm.split_dns_domains?.includes(domain)) {
+      setConfigForm({
+        ...configForm,
+        split_dns_domains: [...(configForm.split_dns_domains || []), domain],
+      })
+      setNewSplitDomain('')
+    }
+  }
+
+  const removeSplitDomain = (domain: string) => {
+    setConfigForm({
+      ...configForm,
+      split_dns_domains: configForm.split_dns_domains?.filter((d) => d !== domain) || [],
     })
   }
 
@@ -418,6 +437,72 @@ export default function VPNPage() {
                     <Button type="button" variant="outline" size="sm" onClick={addDnsServer}>
                       <Plus className="h-4 w-4" />
                     </Button>
+                  </div>
+                </div>
+
+                {/* Split DNS (internal domain resolution through the tunnel) */}
+                <div className="space-y-3 p-4 border border-border rounded-lg">
+                  <div>
+                    <Label className="text-base font-medium">Split DNS (domínio interno)</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Resolve apenas os domínios abaixo por um DNS interno através do túnel; o
+                      resto continua usando o DNS do cliente. Ideal para split-tunnel (Redirect
+                      Gateway desligado). Em split-tunnel, o DNS público NÃO é empurrado.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>DNS interno</Label>
+                    <Input
+                      placeholder="10.48.0.10"
+                      value={configForm.internal_dns_server ?? ''}
+                      onChange={(e) =>
+                        setConfigForm({ ...configForm, internal_dns_server: e.target.value })
+                      }
+                      className="max-w-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      IP do servidor DNS que resolve o domínio (precisa ser alcançável pelo túnel,
+                      ex. dentro da rede NAT). Deixe vazio para desabilitar.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Domínios</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {configForm.split_dns_domains?.map((domain) => (
+                        <span
+                          key={domain}
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-secondary rounded-md text-sm font-mono"
+                        >
+                          {domain}
+                          <button
+                            type="button"
+                            onClick={() => removeSplitDomain(domain)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="numerama.local"
+                        value={newSplitDomain}
+                        onChange={(e) => setNewSplitDomain(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addSplitDomain()
+                          }
+                        }}
+                        className="max-w-xs"
+                      />
+                      <Button type="button" variant="outline" size="sm" onClick={addSplitDomain}>
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
 

@@ -494,18 +494,38 @@ async def update_vpn_server_config(
         )
 
     vpn_service = VPNService(db)
+    import logging
+    conf_changed = False
 
-    # Update redirect-gateway in server.conf if changed
+    # Update redirect-gateway line in server.conf if changed
     if data.redirect_gateway is not None:
         success, error = await vpn_service.update_server_conf_redirect_gateway(data.redirect_gateway)
         if not success:
-            import logging
             logging.warning(f"Failed to update redirect-gateway: {error}")
         else:
-            # Restart server to apply changes
-            server_status = await vpn_service.get_server_status()
-            if server_status.get("is_running"):
-                await vpn_service.restart_server()
+            conf_changed = True
+
+    # Re-apply the DNS / split-DNS push block when any DNS-relevant field changed.
+    # Uses the merged config so full-tunnel vs split-tunnel is derived from the
+    # effective redirect_gateway value (fixes public-DNS-in-split-tunnel bug).
+    dns_relevant = ("dns_servers", "internal_dns_server", "split_dns_domains", "redirect_gateway")
+    if any(getattr(data, f) is not None for f in dns_relevant):
+        success, error = await vpn_service.update_server_conf_dns(
+            dns_servers=current_config.get("dns_servers", []),
+            redirect_gateway=current_config.get("redirect_gateway", True),
+            internal_dns_server=current_config.get("internal_dns_server"),
+            split_dns_domains=current_config.get("split_dns_domains", []),
+        )
+        if not success:
+            logging.warning(f"Failed to update DNS push: {error}")
+        else:
+            conf_changed = True
+
+    # Restart once if the running server config changed
+    if conf_changed:
+        server_status = await vpn_service.get_server_status()
+        if server_status.get("is_running"):
+            await vpn_service.restart_server()
 
     # Auto-start server if not running
     server_status = await vpn_service.get_server_status()
