@@ -1,0 +1,3 @@
+# Keep shell scripts LF so they run on Linux (and via git-bash on Windows) even
+# when checked out on a machine with core.autocrlf=true.
+*.sh text eol=lf
