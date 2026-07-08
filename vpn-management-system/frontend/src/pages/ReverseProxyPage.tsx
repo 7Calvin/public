@@ -27,8 +27,6 @@ import {
   Copy,
   Loader2,
   FileKey,
-  Server,
-  Save,
 } from 'lucide-react'
 import type { ProxyRoute, ProxyRouteCreate, CertificateListResponse, ACMEChallenge } from '@/types'
 
@@ -96,8 +94,6 @@ export default function ReverseProxyPage() {
   const [dnsRouteContext, setDnsRouteContext] = useState<ProxyRoute | null>(null)
   const [isVerifying, setIsVerifying] = useState(false)
   const [verifyResult, setVerifyResult] = useState<{ success: boolean; message: string } | null>(null)
-  const [editDomain, setEditDomain] = useState('')
-  const [isEditingDomain, setIsEditingDomain] = useState(false)
 
   // Queries
   const { data: routesData, isLoading } = useQuery({
@@ -121,11 +117,6 @@ export default function ReverseProxyPage() {
     queryKey: ['proxy-config-preview'],
     queryFn: () => proxyApi.previewConfig().then((res) => res.data),
     enabled: isConfigPreviewOpen,
-  })
-
-  const { data: mgmtDomain, refetch: refetchMgmtDomain } = useQuery({
-    queryKey: ['management-domain'],
-    queryFn: () => proxyApi.getManagementDomain().then((res) => res.data),
   })
 
   // Mutations
@@ -271,22 +262,6 @@ export default function ReverseProxyPage() {
       toast({
         variant: 'destructive',
         title: 'Failed to delete certificate',
-        description: getErrorMessage(error),
-      })
-    },
-  })
-
-  const updateDomainMutation = useMutation({
-    mutationFn: (domain: string) => proxyApi.updateManagementDomain({ domain }),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['management-domain'] })
-      toast({ title: res.data.message || 'Domain updated' })
-      setIsEditingDomain(false)
-    },
-    onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
-      toast({
-        variant: 'destructive',
-        title: 'Failed to update domain',
         description: getErrorMessage(error),
       })
     },
@@ -946,93 +921,6 @@ export default function ReverseProxyPage() {
         </CardContent>
       </Card>
 
-      {/* Management Domain Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5" />
-            Management Panel Domain
-          </CardTitle>
-          <CardDescription>
-            Domain used to access this management panel
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {!mgmtDomain ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          ) : isEditingDomain ? (
-            <div className="flex items-center gap-3">
-              <Input
-                value={editDomain}
-                onChange={(e) => setEditDomain(e.target.value)}
-                placeholder="vpn.example.com"
-                className="max-w-sm font-mono"
-              />
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (editDomain.trim()) {
-                    updateDomainMutation.mutate(editDomain.trim())
-                  }
-                }}
-                disabled={updateDomainMutation.isPending || !editDomain.trim()}
-              >
-                <Save className="h-4 w-4 mr-1" />
-                {updateDomainMutation.isPending ? 'Saving...' : 'Save'}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsEditingDomain(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid gap-4 md:grid-cols-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Domain</p>
-                  <p className="font-mono font-medium">
-                    {mgmtDomain.domain || <span className="text-muted-foreground">Not configured</span>}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">IP Address</p>
-                  <p className="font-mono font-medium">
-                    {mgmtDomain.ip || '-'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">SSL</p>
-                  <p className={mgmtDomain.ssl_enabled ? 'text-green-500 font-medium' : 'text-muted-foreground'}>
-                    {mgmtDomain.ssl_enabled ? 'Let\'s Encrypt' : 'Disabled'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEditDomain(mgmtDomain.domain || '')
-                    setIsEditingDomain(true)
-                  }}
-                >
-                  <Pencil className="h-4 w-4 mr-1" />
-                  Change Domain
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => refetchMgmtDomain()}>
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Changing the domain will update the Traefik routing and restart affected services. Make sure DNS is already pointing to this server.
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Add Route Modal */}
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>

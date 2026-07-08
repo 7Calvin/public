@@ -858,9 +858,17 @@ class TraefikService:
     COMPOSE_FILE = "/app/docker-compose.yml"
 
     def get_management_domain(self) -> dict:
-        """Read the current management domain from docker-compose.yml labels"""
+        """
+        Read the current management domain.
+
+        The Traefik labels in docker-compose.yml use ``Host(`${DOMAIN}`)`` — the
+        literal ``${DOMAIN}`` placeholder, resolved from .env only at compose-up
+        time. So the real domain is the ``DOMAIN`` env var the backend already
+        receives (not something parseable from the compose file). Read it from the
+        environment; only fall back to parsing the compose labels if it's unset.
+        """
         import re
-        domain = ""
+        domain = os.environ.get("DOMAIN", "").strip()
         ip = ""
         ssl_enabled = False
 
@@ -868,20 +876,22 @@ class TraefikService:
             with open(self.COMPOSE_FILE, "r") as f:
                 content = f.read()
 
-            # Extract domain from frontend router rule: Host(`domain`)
-            match = re.search(
-                r'traefik\.http\.routers\.frontend\.rule=Host\(`([^`]+)`\)',
-                content,
-            )
-            if match:
-                domain = match.group(1)
+            # Fallback: only trust a label value if it's a concrete domain, not
+            # the unresolved ${DOMAIN} placeholder.
+            if not domain:
+                match = re.search(
+                    r'traefik\.http\.routers\.frontend\.rule=Host\(`([^`]+)`\)',
+                    content,
+                )
+                if match and "${" not in match.group(1):
+                    domain = match.group(1)
 
-            # Extract IP from backend-ip router rule
+            # Extract IP from backend-ip router rule (if configured with a literal)
             match = re.search(
                 r'traefik\.http\.routers\.backend-ip\.rule=Host\(`([^`]+)`\)',
                 content,
             )
-            if match:
+            if match and "${" not in match.group(1):
                 ip = match.group(1)
 
             # Check if SSL is enabled (certresolver present)
