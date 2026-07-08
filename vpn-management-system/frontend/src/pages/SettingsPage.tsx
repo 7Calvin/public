@@ -50,6 +50,31 @@ export default function SettingsPage() {
     },
   })
 
+  // Certificate status for the management domain
+  const { data: certInfo, refetch: refetchCert } = useQuery({
+    queryKey: ['management-cert', mgmtDomain?.domain],
+    queryFn: () => proxyApi.certificateDetails(mgmtDomain.domain).then((res: any) => res.data).catch(() => null),
+    enabled: !!(user?.is_admin && mgmtDomain?.domain),
+  })
+
+  const renewCertMutation = useMutation({
+    mutationFn: (domain: string) => proxyApi.renewCertificate(domain),
+    onSuccess: (res: any) => {
+      toast({
+        title: res?.data?.message || 'Certificate renewal triggered',
+        description: 'Traefik is re-issuing — it can take up to a minute.',
+      })
+      setTimeout(() => refetchCert(), 30000)
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to regenerate certificate',
+        description: error?.response?.data?.detail || error?.response?.data?.message,
+      })
+    },
+  })
+
   const changePasswordMutation = useMutation({
     mutationFn: () => authApi.changePassword(currentPassword, newPassword, confirmPassword),
     onSuccess: () => {
@@ -486,10 +511,21 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">IP Address</p>
-                    <p className="font-mono font-medium">
-                      {mgmtDomain.ip || '-'}
-                    </p>
+                    <p className="text-sm text-muted-foreground">Certificate</p>
+                    {certInfo ? (
+                      <p className={
+                        certInfo.status === 'valid' ? 'text-green-500 font-medium'
+                          : certInfo.status === 'expiring' ? 'text-yellow-500 font-medium'
+                          : 'text-destructive font-medium'
+                      }>
+                        {certInfo.status === 'valid' ? 'Valid'
+                          : certInfo.status === 'expiring' ? 'Expiring'
+                          : certInfo.status === 'expired' ? 'Expired' : 'Error'}
+                        {typeof certInfo.days_remaining === 'number' ? ` · ${certInfo.days_remaining}d left` : ''}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground">Not issued (self-signed)</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">SSL</p>
@@ -510,12 +546,23 @@ export default function SettingsPage() {
                     <Pencil className="h-4 w-4 mr-1" />
                     Change Domain
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => refetchMgmtDomain()}>
+                  {mgmtDomain.domain && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => renewCertMutation.mutate(mgmtDomain.domain)}
+                      disabled={renewCertMutation.isPending}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      {renewCertMutation.isPending ? 'Regenerating...' : 'Regenerate cert'}
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => { refetchMgmtDomain(); refetchCert() }}>
                     <RefreshCw className="h-4 w-4" />
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Changing the domain will update the Traefik routing and restart affected services. Make sure DNS is already pointing to this server. If the new domain isn't ready you can still reach the panel via its IP.
+                  Changing the domain updates the Traefik routing and restarts affected services — make sure DNS already points here (the panel stays reachable via its IP if not). "Regenerate cert" re-issues the Let's Encrypt certificate (needs port 80 reachable from the internet).
                 </p>
               </div>
             )}
