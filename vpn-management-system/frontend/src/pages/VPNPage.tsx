@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { vpnApi, proxyApi } from '@/api/client'
+import { vpnApi } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { formatBytes } from '@/lib/utils'
-import { Download, RefreshCw, Shield, ShieldOff, Server, Settings, Save, Plus, X, Pencil } from 'lucide-react'
+import { Download, RefreshCw, Shield, ShieldOff, Server, Settings, Save, Plus, X } from 'lucide-react'
 import type { VPNServerConfig } from '@/types'
 
 export default function VPNPage() {
@@ -21,8 +21,6 @@ export default function VPNPage() {
   const [newDns, setNewDns] = useState('')
   const [newSplitDomain, setNewSplitDomain] = useState('')
   const [newRoute, setNewRoute] = useState('')
-  const [editDomain, setEditDomain] = useState('')
-  const [isEditingDomain, setIsEditingDomain] = useState(false)
 
   // Server status
   const { data: serverStatus } = useQuery({
@@ -54,29 +52,6 @@ export default function VPNPage() {
     },
     onError: () => {
       toast({ variant: 'destructive', title: 'Failed to save configuration' })
-    },
-  })
-
-  // Management panel domain (admin only)
-  const { data: mgmtDomain, refetch: refetchMgmtDomain } = useQuery({
-    queryKey: ['management-domain'],
-    queryFn: () => proxyApi.getManagementDomain().then((res) => res.data),
-    enabled: user?.is_admin,
-  })
-
-  const updateDomainMutation = useMutation({
-    mutationFn: (domain: string) => proxyApi.updateManagementDomain({ domain }),
-    onSuccess: (res: any) => {
-      queryClient.invalidateQueries({ queryKey: ['management-domain'] })
-      toast({ title: res?.data?.message || 'Domain updated' })
-      setIsEditingDomain(false)
-    },
-    onError: (error: any) => {
-      toast({
-        variant: 'destructive',
-        title: 'Failed to update domain',
-        description: error?.response?.data?.detail || error?.response?.data?.message,
-      })
     },
   })
 
@@ -574,96 +549,6 @@ export default function VPNPage() {
                     Save Configuration
                   </Button>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Management Panel Domain */}
-      {user?.is_admin && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="h-5 w-5" />
-              Management Panel Domain
-            </CardTitle>
-            <CardDescription>
-              Domain used to access this management panel
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!mgmtDomain ? (
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            ) : isEditingDomain ? (
-              <div className="flex items-center gap-3">
-                <Input
-                  value={editDomain}
-                  onChange={(e) => setEditDomain(e.target.value)}
-                  placeholder="vpn.example.com"
-                  className="max-w-sm font-mono"
-                />
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (editDomain.trim()) {
-                      updateDomainMutation.mutate(editDomain.trim())
-                    }
-                  }}
-                  disabled={updateDomainMutation.isPending || !editDomain.trim()}
-                >
-                  <Save className="h-4 w-4 mr-1" />
-                  {updateDomainMutation.isPending ? 'Saving...' : 'Save'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsEditingDomain(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Domain</p>
-                    <p className="font-mono font-medium">
-                      {mgmtDomain.domain || <span className="text-muted-foreground">Not configured</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">IP Address</p>
-                    <p className="font-mono font-medium">
-                      {mgmtDomain.ip || '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">SSL</p>
-                    <p className={mgmtDomain.ssl_enabled ? 'text-green-500 font-medium' : 'text-muted-foreground'}>
-                      {mgmtDomain.ssl_enabled ? 'Let\'s Encrypt' : 'Disabled'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setEditDomain(mgmtDomain.domain || '')
-                      setIsEditingDomain(true)
-                    }}
-                  >
-                    <Pencil className="h-4 w-4 mr-1" />
-                    Change Domain
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => refetchMgmtDomain()}>
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Changing the domain will update the Traefik routing and restart affected services. Make sure DNS is already pointing to this server.
-                </p>
               </div>
             )}
           </CardContent>

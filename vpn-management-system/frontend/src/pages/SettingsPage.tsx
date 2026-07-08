@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
-import { authApi } from '@/api/client'
+import { authApi, proxyApi } from '@/api/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff } from 'lucide-react'
+import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save } from 'lucide-react'
 import SystemUpdateCard from '@/components/SystemUpdateCard'
 
 export default function SettingsPage() {
@@ -24,6 +24,31 @@ export default function SettingsPage() {
   const [qrCode, setQrCode] = useState<string | null>(null)
   const [backupCodes, setBackupCodes] = useState<string[]>([])
   const [copiedCodes, setCopiedCodes] = useState(false)
+  const [editDomain, setEditDomain] = useState('')
+  const [isEditingDomain, setIsEditingDomain] = useState(false)
+
+  // Management panel domain (admin only)
+  const { data: mgmtDomain, refetch: refetchMgmtDomain } = useQuery({
+    queryKey: ['management-domain'],
+    queryFn: () => proxyApi.getManagementDomain().then((res) => res.data),
+    enabled: user?.is_admin,
+  })
+
+  const updateDomainMutation = useMutation({
+    mutationFn: (domain: string) => proxyApi.updateManagementDomain({ domain }),
+    onSuccess: (res: any) => {
+      refetchMgmtDomain()
+      toast({ title: res?.data?.message || 'Domain updated' })
+      setIsEditingDomain(false)
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update domain',
+        description: error?.response?.data?.detail || error?.response?.data?.message,
+      })
+    },
+  })
 
   const changePasswordMutation = useMutation({
     mutationFn: () => authApi.changePassword(currentPassword, newPassword, confirmPassword),
@@ -407,6 +432,96 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Management Panel Domain (admin only) */}
+      {user?.is_admin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Server className="h-5 w-5" />
+              Management Panel Domain
+            </CardTitle>
+            <CardDescription>
+              Domain used to access this management panel
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!mgmtDomain ? (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            ) : isEditingDomain ? (
+              <div className="flex items-center gap-3">
+                <Input
+                  value={editDomain}
+                  onChange={(e) => setEditDomain(e.target.value)}
+                  placeholder="vpn.example.com"
+                  className="max-w-sm font-mono"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (editDomain.trim()) {
+                      updateDomainMutation.mutate(editDomain.trim())
+                    }
+                  }}
+                  disabled={updateDomainMutation.isPending || !editDomain.trim()}
+                >
+                  <Save className="h-4 w-4 mr-1" />
+                  {updateDomainMutation.isPending ? 'Saving...' : 'Save'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditingDomain(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Domain</p>
+                    <p className="font-mono font-medium">
+                      {mgmtDomain.domain || <span className="text-muted-foreground">Not configured</span>}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">IP Address</p>
+                    <p className="font-mono font-medium">
+                      {mgmtDomain.ip || '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">SSL</p>
+                    <p className={mgmtDomain.ssl_enabled ? 'text-green-500 font-medium' : 'text-muted-foreground'}>
+                      {mgmtDomain.ssl_enabled ? 'Let\'s Encrypt' : 'Disabled'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEditDomain(mgmtDomain.domain || '')
+                      setIsEditingDomain(true)
+                    }}
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Change Domain
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => refetchMgmtDomain()}>
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Changing the domain will update the Traefik routing and restart affected services. Make sure DNS is already pointing to this server. If the new domain isn't ready you can still reach the panel via its IP.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* System & Updates (admin only) */}
       {user?.is_admin && <SystemUpdateCard />}
