@@ -688,6 +688,20 @@ create_directory_structure() {
     mkdir -p ${INSTALL_DIR}/data/{postgres,redis,openvpn,backend}
     mkdir -p ${INSTALL_DIR}/config/openvpn
 
+    # Seed the VPN client allow-list with the configured NAT gateway network so
+    # internal-network access works out of the box. Without this, VPN_FILTER drops
+    # traffic to the internal net (it falls under the 10.0.0.0/8 DROP) and clients
+    # can't reach it until an admin adds it manually. start.sh reads this file on
+    # boot; we only seed (append-if-absent) so an existing list is never clobbered.
+    if [ -n "${NAT_GATEWAY_NETWORK}" ]; then
+        mkdir -p ${INSTALL_DIR}/data/openvpn/firewall
+        local allow_file="${INSTALL_DIR}/data/openvpn/firewall/allowed_networks.conf"
+        if ! grep -qxF "${NAT_GATEWAY_NETWORK}" "$allow_file" 2>/dev/null; then
+            echo "${NAT_GATEWAY_NETWORK}" >> "$allow_file"
+            log_success "Seeded allowed_networks with ${NAT_GATEWAY_NETWORK}"
+        fi
+    fi
+
     log_success "Directories created at ${INSTALL_DIR}"
 }
 
