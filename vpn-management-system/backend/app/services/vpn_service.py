@@ -282,6 +282,11 @@ class VPNService:
             "cipher AES-256-GCM",
             "auth-user-pass",
             "auth-nocache",
+            # Disable time-based TLS renegotiation on the CLIENT. The server can't push
+            # reneg-sec (OpenVPN 2.4 rejects 'reneg-sec' in PUSH-OPTIONS), so without
+            # this the client renegotiates after 1h and, with username/password auth,
+            # re-prompts for credentials and drops the tunnel.
+            "reneg-sec 0",
             "",
         ]
 
@@ -1084,6 +1089,11 @@ G4AZmjLbG+8UYeKnGr4kMzYrq4rFjLVlzA==
             "# Authentication (username/password only)",
             "auth-user-pass",
             "auth-nocache",
+            # Disable time-based TLS renegotiation on the CLIENT. The server can't push
+            # reneg-sec (OpenVPN 2.4 rejects 'reneg-sec' in PUSH-OPTIONS), so without
+            # this the client renegotiates after 1h and, with username/password auth,
+            # re-prompts for credentials and drops the tunnel.
+            "reneg-sec 0",
             "",
             "# Security",
             "remote-cert-tls server",
