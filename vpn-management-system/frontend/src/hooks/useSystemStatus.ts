@@ -13,12 +13,16 @@ export interface SystemInfo {
   hostname?: string | null
   uptime_seconds?: number | null
   cpu_pct?: number | null
+  cpu_cores?: number | null
+  loadavg?: string | null
   mem_pct?: number | null
   mem_total_kb?: number | null
+  mem_used_kb?: number | null
   disk_pct?: number | null
   disk_total_kb?: number | null
-  loadavg?: string | null
+  disk_used_kb?: number | null
   public_ip?: string | null
+  private_ip?: string | null
   version?: string | null
 }
 
@@ -82,5 +86,5 @@ export function useSystemStatus() {
   const status: 'ok' | 'warn' | 'down' =
     alerts.some((a) => a.level === 'down') ? 'down' : alerts.some((a) => a.level === 'warn') ? 'warn' : 'ok'
 
-  return { info, alerts, status, isAdmin }
+  return { info, alerts, status, isAdmin, update: upd }
 }

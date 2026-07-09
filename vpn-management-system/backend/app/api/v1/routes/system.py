@@ -32,8 +32,10 @@ _HOST_METRICS_SCRIPT = r"""
 printf 'os=%s\n' "${PRETTY_NAME:-Linux}"
 printf 'hostname=%s\n' "$(cat /hhost 2>/dev/null)"
 printf 'uptime=%s\n' "$(cut -d. -f1 /hproc/uptime 2>/dev/null)"
+printf 'cpu_cores=%s\n' "$(grep -c ^processor /hproc/cpuinfo 2>/dev/null)"
+printf 'private_ip=%s\n' "$(hostname -i 2>/dev/null | tr ' ' '\n' | grep -Ev '^(127\.|172\.1[7-9]\.|172\.2[0-9]\.|172\.3[01]\.|::|$)' | head -1)"
 awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{printf "mem_total_kb=%d\nmem_avail_kb=%d\n",t,a}' /hproc/meminfo 2>/dev/null
-df -P /hroot 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); printf "disk_pct=%s\ndisk_total_kb=%s\n",$5,$2}'
+df -P /hroot 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); printf "disk_pct=%s\ndisk_total_kb=%s\ndisk_used_kb=%s\n",$5,$2,$3}'
 c1=$(awk '/^cpu /{s=0;for(i=2;i<=NF;i++)s+=$i; print s","$5}' /hproc/stat)
 sleep 1
 c2=$(awk '/^cpu /{s=0;for(i=2;i<=NF;i++)s+=$i; print s","$5}' /hproc/stat)
@@ -48,6 +50,7 @@ def _collect_host_metrics() -> dict:
         r = subprocess.run(
             [
                 "docker", "run", "--rm", "--entrypoint", "sh",
+                "--network", "host",
                 "-v", "/proc:/hproc:ro",
                 "-v", "/etc/os-release:/osr:ro",
                 "-v", "/etc/hostname:/hhost:ro",
@@ -70,9 +73,11 @@ async def get_system_info(admin: User = Depends(require_admin)):
     """OS, uptime and live CPU/memory/disk of the host, plus public IP + version."""
     info = {
         "os": None, "hostname": None, "uptime_seconds": None,
-        "cpu_pct": None, "mem_pct": None, "mem_total_kb": None,
-        "disk_pct": None, "disk_total_kb": None, "loadavg": None,
-        "public_ip": None, "version": None,
+        "cpu_pct": None, "cpu_cores": None, "loadavg": None,
+        "mem_pct": None, "mem_total_kb": None, "mem_used_kb": None,
+        "disk_pct": None, "disk_total_kb": None, "disk_used_kb": None,
+        "public_ip": None, "private_ip": None,
+        "version": None, "update_available": None,
     }
 
     try:
@@ -85,7 +90,8 @@ async def get_system_info(admin: User = Depends(require_admin)):
     info["os"] = d.get("os") or None
     info["hostname"] = d.get("hostname") or None
     info["loadavg"] = d.get("loadavg") or None
-    for k in ("uptime", "cpu_pct", "disk_pct", "disk_total_kb"):
+    info["private_ip"] = d.get("private_ip") or None
+    for k in ("uptime", "cpu_pct", "cpu_cores", "disk_pct", "disk_total_kb", "disk_used_kb"):
         val = d.get(k, "")
         if val.isdigit():
             info["uptime_seconds" if k == "uptime" else k] = int(val)
@@ -94,6 +100,7 @@ async def get_system_info(admin: User = Depends(require_admin)):
         ma = int(d.get("mem_avail_kb", "0") or 0)
         if mt > 0:
             info["mem_total_kb"] = mt
+            info["mem_used_kb"] = mt - ma
             info["mem_pct"] = round(100 * (mt - ma) / mt)
     except (ValueError, ZeroDivisionError):
         pass

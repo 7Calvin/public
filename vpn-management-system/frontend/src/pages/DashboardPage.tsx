@@ -1,12 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { connectionsApi, usersApi, vpnApi, ipsecApi } from '@/api/client'
+import { connectionsApi, usersApi, vpnApi, ipsecApi, proxyApi } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { PageHeader, StatTile } from '@/components/PageHeader'
 import { useSystemStatus } from '@/hooks/useSystemStatus'
 import { ThroughputChart } from '@/components/ThroughputChart'
-import { formatBytes, formatCertificateExpiry, formatDuration } from '@/lib/utils'
+import { formatBytes, formatCertificateExpiry } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { Server as ServerIcon } from 'lucide-react'
 import { Activity, Shield, ArrowUpDown, Download, Calendar, Lock, ArrowUp, ArrowDown, RefreshCw, Users } from 'lucide-react'
@@ -15,7 +15,18 @@ export default function DashboardPage() {
   const { user } = useAuthStore()
   const isAdmin = user?.is_admin
   const queryClient = useQueryClient()
-  const { info: sysInfo } = useSystemStatus()
+  const { info: sysInfo, update } = useSystemStatus()
+
+  const { data: mgmtDomain } = useQuery({
+    queryKey: ['management-domain'],
+    queryFn: () => proxyApi.getManagementDomain().then((r) => r.data),
+    enabled: isAdmin,
+  })
+  const { data: certInfo } = useQuery({
+    queryKey: ['management-cert', mgmtDomain?.domain],
+    queryFn: () => proxyApi.certificateDetails(mgmtDomain.domain).then((r: any) => r.data).catch(() => null),
+    enabled: !!(isAdmin && mgmtDomain?.domain),
+  })
 
   const { data: stats } = useQuery({ queryKey: ['connection-stats'], queryFn: () => connectionsApi.stats().then((r) => r.data), refetchInterval: 30000, enabled: isAdmin })
   const { data: userStats } = useQuery({ queryKey: ['user-stats'], queryFn: () => usersApi.stats().then((r) => r.data), enabled: isAdmin })
@@ -83,22 +94,43 @@ export default function DashboardPage() {
 
         {sysInfo && (
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ServerIcon className="h-5 w-5 text-primary" /> Sistema</CardTitle>
-              <CardDescription>{sysInfo.hostname || 'servidor'}</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-3 text-sm">
-                <Row label="Sistema operacional" value={sysInfo.os || '—'} />
-                <Row label="IP público" value={<span className="font-mono">{sysInfo.public_ip || '—'}</span>} />
-                <Row label="Uptime" value={sysInfo.uptime_seconds ? formatDuration(sysInfo.uptime_seconds).split(' ').slice(0, 2).join(' ') : '—'} />
-                <Row label="Versão" value={sysInfo.version ? `v${sysInfo.version}` : '—'} />
-                {sysInfo.loadavg && <Row label="Load (1m)" value={sysInfo.loadavg} />}
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle className="flex items-center gap-2"><ServerIcon className="h-5 w-5 text-primary" /> Servidor</CardTitle>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success eg-pulse" /> Online
+                </span>
+                {sysInfo.version && <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">v{sysInfo.version}</span>}
               </div>
-              <div className="space-y-4">
-                <Meter label="CPU" pct={sysInfo.cpu_pct} />
-                <Meter label="Memória" pct={sysInfo.mem_pct} sub={sysInfo.mem_total_kb ? formatBytes(sysInfo.mem_total_kb * 1024) : undefined} />
-                <Meter label="Disco" pct={sysInfo.disk_pct} sub={sysInfo.disk_total_kb ? formatBytes(sysInfo.disk_total_kb * 1024) : undefined} />
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+                <Field label="Hostname" value={sysInfo.hostname || '—'} mono />
+                <Field label="Sistema" value={sysInfo.os || '—'} />
+                <Field label="IP privado" value={sysInfo.private_ip || '—'} mono />
+                <Field label="IP público" value={sysInfo.public_ip || '—'} mono />
+                <Field
+                  label="Certificado"
+                  value={certInfo ? (
+                    <span className={certInfo.status === 'valid' ? 'text-success' : certInfo.status === 'expiring' ? 'text-warning' : 'text-destructive'}>
+                      {certInfo.status === 'valid' ? 'Válido' : certInfo.status === 'expiring' ? 'Expirando' : 'Inválido'}
+                      {typeof certInfo.days_remaining === 'number' ? ` · ${certInfo.days_remaining}d` : ''}
+                    </span>
+                  ) : <span className="text-muted-foreground">—</span>}
+                />
+                <Field
+                  label="Atualizações"
+                  value={update ? (
+                    update.update_available
+                      ? <span className="text-warning">v{update.latest} disponível</span>
+                      : <span className="text-success">Versão mais recente</span>
+                  ) : <span className="text-muted-foreground">—</span>}
+                />
+              </div>
+              <div className="space-y-4 border-t border-border pt-5">
+                <Meter label="CPU" pct={sysInfo.cpu_pct} sub={`${sysInfo.cpu_cores ?? '?'} vCPU · load ${sysInfo.loadavg ?? '—'}`} />
+                <Meter label="Memória" pct={sysInfo.mem_pct} sub={sysInfo.mem_total_kb ? `${formatBytes((sysInfo.mem_used_kb || 0) * 1024)} / ${formatBytes(sysInfo.mem_total_kb * 1024)}` : undefined} />
+                <Meter label="Disco" pct={sysInfo.disk_pct} sub={sysInfo.disk_total_kb ? `${formatBytes((sysInfo.disk_used_kb || 0) * 1024)} / ${formatBytes(sysInfo.disk_total_kb * 1024)}` : undefined} />
               </div>
             </CardContent>
           </Card>
@@ -250,18 +282,28 @@ function Row({ label, value }: { label: React.ReactNode; value: React.ReactNode 
   )
 }
 
+function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={cn('font-medium text-foreground', mono && 'font-mono')}>{value}</p>
+    </div>
+  )
+}
+
 function Meter({ label, pct, sub }: { label: string; pct?: number | null; sub?: string }) {
   const v = typeof pct === 'number' ? Math.max(0, Math.min(100, Math.round(pct))) : null
   const color = v == null ? 'bg-muted-foreground/40' : v >= 90 ? 'bg-destructive' : v >= 75 ? 'bg-warning' : 'bg-primary'
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">{label}{sub ? ` · ${sub}` : ''}</span>
-        <span className="font-medium text-foreground">{v == null ? '—' : `${v}%`}</span>
+        <span className="text-muted-foreground">{label}</span>
+        <span className={cn('font-medium', v != null && v >= 90 ? 'text-destructive' : v != null && v >= 75 ? 'text-warning' : 'text-primary')}>{v == null ? '—' : `${v}%`}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-secondary">
         <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${v ?? 0}%` }} />
       </div>
+      {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
     </div>
   )
 }
