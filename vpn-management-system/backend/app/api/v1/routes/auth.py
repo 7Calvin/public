@@ -56,6 +56,12 @@ async def login(
     )
 
     if error:
+        from app.services.audit_service import record_event
+        await record_event(
+            action="Falha de login", resource_type="auth", username=data.username,
+            ip=client_ip, user_agent=request.headers.get("user-agent"),
+            details={"reason": error}, severity="warning",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=error
@@ -69,6 +75,14 @@ async def login(
         )
 
     tokens = auth_service.create_tokens(user, mfa_pending=mfa_pending)
+
+    if not mfa_pending:
+        from app.services.audit_service import record_event
+        await record_event(
+            action="Login no painel", resource_type="auth", user_id=user.id,
+            username=user.username, ip=client_ip, user_agent=request.headers.get("user-agent"),
+            severity="info",
+        )
 
     return LoginResponse(
         access_token=tokens["access_token"],

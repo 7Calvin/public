@@ -64,6 +64,18 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 
+# Audit middleware — records mutating actions to the audit trail.
+@app.middleware("http")
+async def audit_trail_middleware(request: Request, call_next):
+    response = await call_next(request)
+    try:
+        from app.services.audit_service import record_request
+        await record_request(request, response.status_code)
+    except Exception:  # noqa: BLE001 — auditing must never break a request
+        pass
+    return response
+
+
 # ==================== Exception Handlers ====================
 
 @app.exception_handler(StarletteHTTPException)
@@ -138,6 +150,24 @@ async def startup_event():
         # This is useful for health checks in container orchestration
 
     logger.info("Application started successfully")
+
+    # Background audit-log retention: prune entries older than the configured
+    # window once a day. (Retention days will become configurable via settings.)
+    import asyncio
+
+    async def _audit_retention_loop():
+        from app.services.audit_service import prune_old
+        retention_days = getattr(settings, "AUDIT_RETENTION_DAYS", 90)
+        while True:
+            try:
+                deleted = await prune_old(retention_days)
+                if deleted:
+                    logger.info(f"Audit retention: pruned {deleted} old entries")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Audit retention loop error: {e}")
+            await asyncio.sleep(24 * 3600)
+
+    asyncio.create_task(_audit_retention_loop())
 
     # Note: Firewall rules are saved in database and applied by NAT agent
     # The backend does not directly modify iptables (requires privileged container)

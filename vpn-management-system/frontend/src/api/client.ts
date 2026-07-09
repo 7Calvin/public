@@ -290,7 +290,7 @@ export const connectionsApi = {
 export const adminApi = {
   dashboard: () => api.get('/admin/dashboard'),
 
-  auditLogs: (params?: { page?: number; page_size?: number; action?: string }) =>
+  auditLogs: (params?: { page?: number; page_size?: number; category?: string; severity?: string; search?: string; since?: string }) =>
     api.get('/admin/audit-logs', { params }),
 
   systemHealth: () => api.get('/admin/system/health'),

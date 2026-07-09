@@ -1,6 +1,8 @@
 """
 Admin Routes - System Administration
 """
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,11 +35,60 @@ async def get_admin_dashboard(
 @router.get("/audit-logs")
 async def get_audit_logs(
     admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    page: int = 1,
+    page_size: int = 50,
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
+    since: Optional[str] = None,
 ):
-    """Get audit logs (admin only)"""
-    # TODO: Implement audit log retrieval
-    return {"message": "Audit logs - to be implemented"}
+    """Audit trail (admin only) with filters + pagination."""
+    from datetime import datetime
+    from sqlalchemy import select, func, or_, desc
+    from app.models.audit_log import AuditLog
+
+    page = max(1, page)
+    page_size = min(200, max(1, page_size))
+
+    conds = []
+    if category:
+        conds.append(AuditLog.resource_type == category)
+    if severity:
+        conds.append(AuditLog.severity == severity)
+    if search:
+        s = f"%{search}%"
+        conds.append(or_(AuditLog.action.ilike(s), AuditLog.username.ilike(s)))
+    if since:
+        try:
+            conds.append(AuditLog.created_at >= datetime.fromisoformat(since))
+        except ValueError:
+            pass
+
+    base = select(AuditLog)
+    if conds:
+        base = base.where(*conds)
+
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+    rows = (
+        await db.execute(
+            base.order_by(desc(AuditLog.created_at)).offset((page - 1) * page_size).limit(page_size)
+        )
+    ).scalars().all()
+
+    def ser(r: AuditLog) -> dict:
+        return {
+            "id": str(r.id),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "username": r.username,
+            "action": r.action,
+            "resource_type": r.resource_type,
+            "ip_address": str(r.ip_address) if r.ip_address else None,
+            "severity": r.severity,
+            "details": r.details,
+        }
+
+    return {"items": [ser(r) for r in rows], "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/system/health")
