@@ -7,6 +7,10 @@ off an update. Progress is streamed by the frontend polling the agent directly
 through Traefik (`/update-agent/status`), because the backend itself restarts
 mid-update and cannot be relied upon to report its own progress.
 """
+import logging
+import os
+import subprocess
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
@@ -16,6 +20,97 @@ from app.models.user import User
 from app.services.update_service import update_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+# Collects host metrics from a throwaway container. The backend is itself a
+# container and can't see the host directly, but it has the docker socket — so a
+# one-shot helper mounts the host /proc, /etc/os-release and / (read-only) and
+# prints key=value lines. No host-service or compose change needed.
+_HOST_METRICS_SCRIPT = r"""
+. /osr 2>/dev/null || true
+printf 'os=%s\n' "${PRETTY_NAME:-Linux}"
+printf 'hostname=%s\n' "$(cat /hhost 2>/dev/null)"
+printf 'uptime=%s\n' "$(cut -d. -f1 /hproc/uptime 2>/dev/null)"
+awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{printf "mem_total_kb=%d\nmem_avail_kb=%d\n",t,a}' /hproc/meminfo 2>/dev/null
+df -P /hroot 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); printf "disk_pct=%s\ndisk_total_kb=%s\n",$5,$2}'
+c1=$(awk '/^cpu /{s=0;for(i=2;i<=NF;i++)s+=$i; print s","$5}' /hproc/stat)
+sleep 1
+c2=$(awk '/^cpu /{s=0;for(i=2;i<=NF;i++)s+=$i; print s","$5}' /hproc/stat)
+awk -v a="$c1" -v b="$c2" 'BEGIN{split(a,x,",");split(b,y,",");dt=y[1]-x[1];di=y[2]-x[2]; if(dt>0) printf "cpu_pct=%d\n",(100*(dt-di)/dt); else print "cpu_pct=0"}'
+printf 'loadavg=%s\n' "$(cut -d' ' -f1 /hproc/loadavg 2>/dev/null)"
+"""
+
+
+def _collect_host_metrics() -> dict:
+    data: dict = {}
+    try:
+        r = subprocess.run(
+            [
+                "docker", "run", "--rm", "--entrypoint", "sh",
+                "-v", "/proc:/hproc:ro",
+                "-v", "/etc/os-release:/osr:ro",
+                "-v", "/etc/hostname:/hhost:ro",
+                "-v", "/:/hroot:ro",
+                "redis:7-alpine", "-c", _HOST_METRICS_SCRIPT,
+            ],
+            capture_output=True, text=True, timeout=20,
+        )
+        for line in r.stdout.splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                data[k.strip()] = v.strip()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"host metrics collection failed: {e}")
+    return data
+
+
+@router.get("/info")
+async def get_system_info(admin: User = Depends(require_admin)):
+    """OS, uptime and live CPU/memory/disk of the host, plus public IP + version."""
+    info = {
+        "os": None, "hostname": None, "uptime_seconds": None,
+        "cpu_pct": None, "mem_pct": None, "mem_total_kb": None,
+        "disk_pct": None, "disk_total_kb": None, "loadavg": None,
+        "public_ip": None, "version": None,
+    }
+
+    try:
+        v = await update_service.get_version()
+        info["version"] = v.get("current")
+    except Exception:  # noqa: BLE001
+        pass
+
+    d = _collect_host_metrics()
+    info["os"] = d.get("os") or None
+    info["hostname"] = d.get("hostname") or None
+    info["loadavg"] = d.get("loadavg") or None
+    for k in ("uptime", "cpu_pct", "disk_pct", "disk_total_kb"):
+        val = d.get(k, "")
+        if val.isdigit():
+            info["uptime_seconds" if k == "uptime" else k] = int(val)
+    try:
+        mt = int(d.get("mem_total_kb", "0") or 0)
+        ma = int(d.get("mem_avail_kb", "0") or 0)
+        if mt > 0:
+            info["mem_total_kb"] = mt
+            info["mem_pct"] = round(100 * (mt - ma) / mt)
+    except (ValueError, ZeroDivisionError):
+        pass
+
+    # Public IP: env override, else best-effort external lookup.
+    info["public_ip"] = os.environ.get("VPN_SERVER_PUBLIC_IP") or None
+    if not info["public_ip"]:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=4.0) as c:
+                resp = await c.get("https://api.ipify.org")
+                if resp.status_code == 200:
+                    info["public_ip"] = resp.text.strip()
+        except Exception:  # noqa: BLE001
+            pass
+
+    return info
 
 
 class UpdateRequest(BaseModel):

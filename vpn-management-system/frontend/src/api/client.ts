@@ -495,6 +495,7 @@ export interface UpdateStatus {
 export const systemApi = {
   // Running version for the badge (any authenticated user).
   version: () => api.get('/system/version'),
+  info: () => api.get('/system/info'),
 
   // Admin: fetch upstream and check whether a newer version exists.
   checkUpdate: () => api.get('/system/update/check'),

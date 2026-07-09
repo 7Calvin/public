@@ -3,7 +3,9 @@ import { useAuthStore } from '@/stores/auth'
 import { navigation } from '@/lib/navigation'
 import { Logo, LogoMark } from '@/components/Logo'
 import { CommandPalette } from '@/components/CommandPalette'
-import { LogOut, Menu, X, Search, Bell, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { SystemBell } from '@/components/SystemBell'
+import { useSystemStatus } from '@/hooks/useSystemStatus'
+import { LogOut, Menu, X, Search, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { systemApi } from '@/api/client'
@@ -15,10 +17,17 @@ export default function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('eg.rail') === '1')
   const [cmdkOpen, setCmdkOpen] = useState(false)
   const [version, setVersion] = useState<string | null>(null)
+  const { status, alerts, isAdmin } = useSystemStatus()
 
   useEffect(() => {
     systemApi.version().then((res) => setVersion(res.data?.current ?? null)).catch(() => setVersion(null))
   }, [])
+
+  const health = {
+    ok: { label: 'Sistemas OK', cls: 'border-success/30 bg-success/10 text-success', dot: 'bg-success' },
+    warn: { label: 'Atenção', cls: 'border-warning/30 bg-warning/10 text-warning', dot: 'bg-warning' },
+    down: { label: 'Problema', cls: 'border-destructive/30 bg-destructive/10 text-destructive', dot: 'bg-destructive' },
+  }[status]
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -171,14 +180,13 @@ export default function DashboardLayout() {
             >
               <Search className="h-5 w-5" />
             </button>
-            <button className="relative text-muted-foreground hover:text-foreground" title="Notificações">
-              <Bell className="h-5 w-5" />
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary" />
-            </button>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
-              <span className="h-1.5 w-1.5 rounded-full bg-success eg-pulse" />
-              Sistemas OK
-            </span>
+            {isAdmin && <SystemBell alerts={alerts} />}
+            {isAdmin && (
+              <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium', health.cls)}>
+                <span className={cn('h-1.5 w-1.5 rounded-full', health.dot, status === 'ok' && 'eg-pulse')} />
+                {health.label}
+              </span>
+            )}
           </div>
         </header>
 

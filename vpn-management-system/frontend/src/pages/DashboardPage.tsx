@@ -4,13 +4,17 @@ import { useAuthStore } from '@/stores/auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { PageHeader, StatTile } from '@/components/PageHeader'
-import { formatBytes, formatCertificateExpiry } from '@/lib/utils'
+import { useSystemStatus } from '@/hooks/useSystemStatus'
+import { formatBytes, formatCertificateExpiry, formatDuration } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { Server as ServerIcon } from 'lucide-react'
 import { Activity, Shield, ArrowUpDown, Download, Calendar, Lock, ArrowUp, ArrowDown, RefreshCw, Users } from 'lucide-react'
 
 export default function DashboardPage() {
   const { user } = useAuthStore()
   const isAdmin = user?.is_admin
   const queryClient = useQueryClient()
+  const { info: sysInfo } = useSystemStatus()
 
   const { data: stats } = useQuery({ queryKey: ['connection-stats'], queryFn: () => connectionsApi.stats().then((r) => r.data), refetchInterval: 30000, enabled: isAdmin })
   const { data: userStats } = useQuery({ queryKey: ['user-stats'], queryFn: () => usersApi.stats().then((r) => r.data), enabled: isAdmin })
@@ -62,6 +66,29 @@ export default function DashboardPage() {
           <StatTile label="Enviado (total)" value={formatBytes(vpnStatus?.total_bytes_out || 0)} sub="OpenVPN" icon={<ArrowUp className="h-4 w-4" />} />
           <StatTile label="Recebido (total)" value={formatBytes(vpnStatus?.total_bytes_in || 0)} sub="OpenVPN" icon={<ArrowDown className="h-4 w-4" />} />
         </div>
+
+        {sysInfo && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><ServerIcon className="h-5 w-5 text-primary" /> Sistema</CardTitle>
+              <CardDescription>{sysInfo.hostname || 'servidor'}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-3 text-sm">
+                <Row label="Sistema operacional" value={sysInfo.os || '—'} />
+                <Row label="IP público" value={<span className="font-mono">{sysInfo.public_ip || '—'}</span>} />
+                <Row label="Uptime" value={sysInfo.uptime_seconds ? formatDuration(sysInfo.uptime_seconds).split(' ').slice(0, 2).join(' ') : '—'} />
+                <Row label="Versão" value={sysInfo.version ? `v${sysInfo.version}` : '—'} />
+                {sysInfo.loadavg && <Row label="Load (1m)" value={sysInfo.loadavg} />}
+              </div>
+              <div className="space-y-4">
+                <Meter label="CPU" pct={sysInfo.cpu_pct} />
+                <Meter label="Memória" pct={sysInfo.mem_pct} sub={sysInfo.mem_total_kb ? formatBytes(sysInfo.mem_total_kb * 1024) : undefined} />
+                <Meter label="Disco" pct={sysInfo.disk_pct} sub={sysInfo.disk_total_kb ? formatBytes(sysInfo.disk_total_kb * 1024) : undefined} />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
@@ -205,6 +232,22 @@ function Row({ label, value }: { label: React.ReactNode; value: React.ReactNode 
     <div className="flex items-center justify-between">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium text-foreground">{value}</span>
+    </div>
+  )
+}
+
+function Meter({ label, pct, sub }: { label: string; pct?: number | null; sub?: string }) {
+  const v = typeof pct === 'number' ? Math.max(0, Math.min(100, Math.round(pct))) : null
+  const color = v == null ? 'bg-muted-foreground/40' : v >= 90 ? 'bg-destructive' : v >= 75 ? 'bg-warning' : 'bg-primary'
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">{label}{sub ? ` · ${sub}` : ''}</span>
+        <span className="font-medium text-foreground">{v == null ? '—' : `${v}%`}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-secondary">
+        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${v ?? 0}%` }} />
+      </div>
     </div>
   )
 }
