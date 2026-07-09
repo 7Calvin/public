@@ -49,6 +49,8 @@ def check(name, cond, detail=""):
 
 
 def mint_admin_token():
+    """Mint a token for the oldest admin account. Returns (token, username) so the
+    caller can show WHO the test acts as — every admin action is audited under it."""
     import asyncio
     from sqlalchemy import select
     from app.core.security import create_access_token
@@ -57,15 +59,22 @@ def mint_admin_token():
 
     async def _():
         async with AsyncSessionLocal() as db:
-            admin = (await db.execute(select(User).where(User.is_admin == True).limit(1))).scalars().first()  # noqa: E712
+            admin = (await db.execute(
+                select(User).where(User.is_admin == True).order_by(User.created_at).limit(1)  # noqa: E712
+            )).scalars().first()
             if not admin:
                 raise SystemExit("no admin user found")
-            return create_access_token({"sub": str(admin.id), "type": "access"})
+            return create_access_token({"sub": str(admin.id), "type": "access"}), admin.username
     return asyncio.run(_())
 
 
 def main():
-    token = os.environ.get("SMOKE_TOKEN") or mint_admin_token()
+    if os.environ.get("SMOKE_TOKEN"):
+        token = os.environ["SMOKE_TOKEN"]
+        print("Autenticando com SMOKE_TOKEN fornecido")
+    else:
+        token, admin_username = mint_admin_token()
+        print(f"Impersonando admin: {admin_username}  (ações admin serão auditadas sob este usuário)")
     c = httpx.Client(base_url=BASE, headers={"Authorization": f"Bearer {token}"}, timeout=30.0)
 
     # ---------- READ ----------
