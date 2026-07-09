@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { PageHeader, StatTile } from '@/components/PageHeader'
 import { useSystemStatus } from '@/hooks/useSystemStatus'
+import { ThroughputChart } from '@/components/ThroughputChart'
 import { formatBytes, formatCertificateExpiry, formatDuration } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { Server as ServerIcon } from 'lucide-react'
@@ -32,8 +33,8 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <PageHeader
-          title="Dashboard"
-          subtitle="Visão geral do sistema"
+          title="Centro de Operações"
+          subtitle="Visão geral do sistema VPN"
           actions={
             <Button variant="outline" size="sm" onClick={refreshAll}>
               <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
@@ -66,6 +67,19 @@ export default function DashboardPage() {
           <StatTile label="Enviado (total)" value={formatBytes(vpnStatus?.total_bytes_out || 0)} sub="OpenVPN" icon={<ArrowUp className="h-4 w-4" />} />
           <StatTile label="Recebido (total)" value={formatBytes(vpnStatus?.total_bytes_in || 0)} sub="OpenVPN" icon={<ArrowDown className="h-4 w-4" />} />
         </div>
+
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2"><ArrowUpDown className="h-5 w-5 text-primary" /> Throughput · últimas 24h</CardTitle>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5"><span className="h-1 w-4 rounded-full" style={{ background: 'hsl(188 84% 53%)' }} /> saída</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-1 w-4 rounded-full" style={{ background: 'hsl(255 100% 68%)' }} /> entrada</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ThroughputChart />
+          </CardContent>
+        </Card>
 
         {sysInfo && (
           <Card>
