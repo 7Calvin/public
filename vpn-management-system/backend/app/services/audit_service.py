@@ -6,6 +6,7 @@ changes, MFA/password, updates) automatically — mapping method+path to a
 friendly action, resolving the actor from the JWT, and never breaking requests.
 Login is instrumented explicitly in the auth route (no token yet at that point).
 """
+import json
 import logging
 import re
 import uuid
@@ -77,6 +78,15 @@ def _last_uuid(path: str) -> Optional[uuid.UUID]:
     return None
 
 
+def _coerce_uuid(val) -> Optional[uuid.UUID]:
+    if not val:
+        return None
+    try:
+        return uuid.UUID(str(val))
+    except (ValueError, TypeError):
+        return None
+
+
 def _client_ip(request) -> Optional[str]:
     xff = request.headers.get("x-forwarded-for")
     if xff:
@@ -136,6 +146,45 @@ async def pre_audit(request) -> Optional[dict]:
     return {"target": name} if name else None
 
 
+_CREATE_PATHS = re.compile(rf"^{_P}/(users|ipsec/connections|proxy/routes|firewall/rules)/?$")
+
+
+def wants_response_body(request, status_code: int) -> bool:
+    """True only for the successful resource-CREATE endpoints. For those, the new
+    object's name/flags live in the RESPONSE body (no id in the path yet), so the
+    middleware reads it to enrich the entry. Reads the response, never the request
+    body, so it can't break the handler."""
+    if request.method != "POST" or status_code >= 300:
+        return False
+    return bool(_CREATE_PATHS.match(request.url.path))
+
+
+def created_ctx_from_body(request, body: bytes) -> Optional[dict]:
+    """Pull a display name (and a couple of key attributes) from a create's
+    response JSON. Returns a ctx dict merged into the audit entry, or None."""
+    try:
+        obj = json.loads(body)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(obj, dict):
+        return None
+    name = obj.get("username") or obj.get("name")
+    if not name:
+        return None
+    ctx: dict = {"target": str(name), "details": {}}
+    rid = obj.get("id")
+    if rid:
+        ctx["resource_id"] = str(rid)
+    path = request.url.path
+    if "/users" in path:
+        role = "admin" if obj.get("is_admin") else "usuário"
+        ctx["suffix"] = role
+        ctx["details"]["perfil"] = role
+        if obj.get("email"):
+            ctx["details"]["email"] = obj["email"]
+    return ctx
+
+
 async def record_event(
     *, action: str, resource_type: str = None, resource_id: uuid.UUID = None,
     user_id: uuid.UUID = None, username: str = None, ip: str = None,
@@ -163,17 +212,22 @@ async def record_request(request, status_code: int, ctx: Optional[dict] = None):
     if not matched:
         return
     resource_type, label = matched
-    target = (ctx or {}).get("target")
+    ctx = ctx or {}
+    target = ctx.get("target")
     if target:
         label = f"{label}: {target}"
+    if ctx.get("suffix"):
+        label = f"{label} ({ctx['suffix']})"
     if status_code >= 400:
         label = f"{label} (falhou)"
     severity = "info" if status_code < 400 else ("warning" if status_code < 500 else "error")
     details = {"method": request.method, "path": request.url.path, "status": status_code}
+    details.update(ctx.get("details") or {})
     if target:
         details["target"] = target
+    resource_id = _last_uuid(request.url.path) or _coerce_uuid(ctx.get("resource_id"))
     await record_event(
-        action=label, resource_type=resource_type, resource_id=_last_uuid(request.url.path),
+        action=label, resource_type=resource_type, resource_id=resource_id,
         user_id=_actor_id(request), ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
         details=details, severity=severity,

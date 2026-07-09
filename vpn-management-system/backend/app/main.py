@@ -67,16 +67,34 @@ async def add_process_time_header(request: Request, call_next):
 # Audit middleware — records mutating actions to the audit trail.
 @app.middleware("http")
 async def audit_trail_middleware(request: Request, call_next):
+    from app.services import audit_service
     ctx = None
     try:
-        from app.services.audit_service import pre_audit
-        ctx = await pre_audit(request)  # resolve target name before delete/edit
+        ctx = await audit_service.pre_audit(request)  # target name before delete/edit
     except Exception:  # noqa: BLE001
         ctx = None
+
     response = await call_next(request)
+
+    # For creates, the new object's name/flags live in the response body (there is
+    # no id in the path). Read the response — not the request — to enrich the entry.
     try:
-        from app.services.audit_service import record_request
-        await record_request(request, response.status_code, ctx)
+        if audit_service.wants_response_body(request, response.status_code):
+            from starlette.responses import Response as _Response
+            chunks = [section async for section in response.body_iterator]
+            raw = b"".join(chunks)
+            response = _Response(
+                content=raw, status_code=response.status_code,
+                headers=dict(response.headers), media_type=response.media_type,
+            )
+            created = audit_service.created_ctx_from_body(request, raw)
+            if created:
+                ctx = {**(ctx or {}), **created}
+    except Exception:  # noqa: BLE001 — never let auditing corrupt a response
+        pass
+
+    try:
+        await audit_service.record_request(request, response.status_code, ctx)
     except Exception:  # noqa: BLE001 — auditing must never break a request
         pass
     return response
