@@ -572,15 +572,26 @@ configuração. Tudo que ele cria é prefixado com `smoketest` e **removido no f
 
 ### Como rodar
 
-Roda **dentro do container do backend** — ele gera um token de admin pela própria
-app, então funciona mesmo com admin exigindo MFA:
+O arquivo fica em `scripts/` na raiz do repo e **não** é embutido na imagem do
+backend — então ele é **alimentado pelo stdin** para o `python -` dentro do
+container (que gera um token de admin pela própria app, funcionando mesmo com
+admin exigindo MFA). Rode a partir da raiz do repo:
 
 ```bash
-# no servidor (via SSH)
-docker exec -w /app vpn-backend python /app/scripts/smoke_test.py
+# Linux / macOS / git-bash — local no servidor
+docker exec -i -w /app vpn-backend python - < scripts/smoke_test.py
+
+# ...ou remoto por SSH, enviando o arquivo local pelo stdin
+ssh user@host "docker exec -i -w /app vpn-backend python -" < scripts/smoke_test.py
 ```
 
-Ou apontando para qualquer base URL com um token JWT já pronto:
+```powershell
+# Windows / PowerShell — remoto por SSH
+Get-Content scripts/smoke_test.py | ssh user@host "docker exec -i -w /app vpn-backend python -"
+```
+
+Ou apontando para qualquer base URL com um token JWT já pronto (roda em qualquer
+lugar com Python + httpx):
 
 ```bash
 SMOKE_BASE=https://seu-dominio.com/api/v1 SMOKE_TOKEN=<jwt> \

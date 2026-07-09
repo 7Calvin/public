@@ -2,12 +2,21 @@
 """
 EdgeGate API smoke test — exercises the main flows end-to-end and cleans up.
 
-Run inside the backend container (mints an admin token via the app, so it works
-even with MFA-required admins):
+This file lives in the repo-root scripts/ and is NOT baked into the backend
+image, so it has to be fed into the container. It mints an admin token via the
+app, so it works even with MFA-required admins.
 
-    docker exec -w /app vpn-backend python /app/scripts/smoke_test.py
+Feed it in over stdin (works from anywhere, no need to copy the file to the host
+first) — run from the repo root:
 
-Or against any base URL with a token:
+    # Linux / macOS / git-bash:
+    docker exec -i -w /app vpn-backend python - < scripts/smoke_test.py
+    ssh user@host "docker exec -i -w /app vpn-backend python -" < scripts/smoke_test.py
+
+    # Windows / PowerShell:
+    Get-Content scripts/smoke_test.py | ssh user@host "docker exec -i -w /app vpn-backend python -"
+
+Or against any base URL with a token (runs anywhere Python + httpx exist):
 
     SMOKE_BASE=https://host/api/v1 SMOKE_TOKEN=<jwt> python scripts/smoke_test.py
 
