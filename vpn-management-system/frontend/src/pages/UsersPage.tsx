@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { formatDate } from '@/lib/utils'
 import { Plus, Search, UserCheck, UserX, Key, X, Eye, EyeOff, Server, User as UserIcon, Trash2, Copy, Check, AlertTriangle, ShieldCheck, ShieldOff } from 'lucide-react'
+import { PageHeader } from '@/components/PageHeader'
 import type { User } from '@/types'
 
 export default function UsersPage() {
@@ -48,14 +49,14 @@ export default function UsersPage() {
       usersApi.update(id, { is_active: isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
-      toast({ title: 'User updated successfully' })
+      toast({ title: 'Usuário atualizado com sucesso' })
     },
     onError: (error: unknown) => {
       const err = error as { response?: { data?: { detail?: string } } }
-      const message = err.response?.data?.detail || 'Failed to update user'
+      const message = err.response?.data?.detail || 'Falha ao atualizar usuário'
       toast({
         variant: 'destructive',
-        title: 'Cannot update user',
+        title: 'Não foi possível atualizar o usuário',
         description: message
       })
     },
@@ -72,7 +73,7 @@ export default function UsersPage() {
       setPasswordCopied(false)
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to reset password' })
+      toast({ variant: 'destructive', title: 'Falha ao redefinir a senha' })
     },
   })
 
@@ -80,7 +81,7 @@ export default function UsersPage() {
     mutationFn: (id: string) => usersApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
-      toast({ title: 'User deleted successfully' })
+      toast({ title: 'Usuário excluído com sucesso' })
       setUserToDelete(null)
       setDeleteConfirmUsername('')
     },
@@ -88,8 +89,8 @@ export default function UsersPage() {
       const err = error as { response?: { data?: { detail?: string } } }
       toast({
         variant: 'destructive',
-        title: 'Failed to delete user',
-        description: err.response?.data?.detail || 'Unknown error',
+        title: 'Falha ao excluir usuário',
+        description: err.response?.data?.detail || 'Erro desconhecido',
       })
     },
   })
@@ -121,13 +122,13 @@ export default function UsersPage() {
         })
         setApiKeyCopied(false)
       } else {
-        toast({ title: 'User created successfully' })
+        toast({ title: 'Usuário criado com sucesso' })
       }
       closeModal()
     },
     onError: (error: unknown) => {
       const err = error as { response?: { data?: { detail?: string | { msg: string }[] } } }
-      let message = 'Unknown error'
+      let message = 'Erro desconhecido'
       if (err.response?.data?.detail) {
         if (Array.isArray(err.response.data.detail)) {
           message = err.response.data.detail.map(e => e.msg).join('; ')
@@ -137,7 +138,7 @@ export default function UsersPage() {
       }
       toast({
         variant: 'destructive',
-        title: 'Failed to create user',
+        title: 'Falha ao criar usuário',
         description: message,
       })
     },
@@ -154,7 +155,7 @@ export default function UsersPage() {
       setApiKeyCopied(false)
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to regenerate API key' })
+      toast({ variant: 'destructive', title: 'Falha ao regenerar a chave de API' })
     },
   })
 
@@ -163,14 +164,14 @@ export default function UsersPage() {
       usersApi.update(id, { is_admin: isAdmin }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
-      toast({ title: 'Admin role updated successfully' })
+      toast({ title: 'Função de administrador atualizada com sucesso' })
     },
     onError: (error: unknown) => {
       const err = error as { response?: { data?: { detail?: string } } }
-      const message = err.response?.data?.detail || 'Failed to update admin role'
+      const message = err.response?.data?.detail || 'Falha ao atualizar a função de administrador'
       toast({
         variant: 'destructive',
-        title: 'Cannot update admin role',
+        title: 'Não foi possível atualizar a função de administrador',
         description: message,
       })
     },
@@ -185,30 +186,30 @@ export default function UsersPage() {
 
   const validatePassword = (password: string): string[] => {
     const errors: string[] = []
-    if (password.length < 12) errors.push('At least 12 characters')
-    if (!/[A-Z]/.test(password)) errors.push('Uppercase letter')
-    if (!/[a-z]/.test(password)) errors.push('Lowercase letter')
-    if (!/\d/.test(password)) errors.push('Number')
-    if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) errors.push('Special character')
+    if (password.length < 12) errors.push('Pelo menos 12 caracteres')
+    if (!/[A-Z]/.test(password)) errors.push('Letra maiúscula')
+    if (!/[a-z]/.test(password)) errors.push('Letra minúscula')
+    if (!/\d/.test(password)) errors.push('Número')
+    if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) errors.push('Caractere especial')
     return errors
   }
 
   const handleCreateUser = () => {
     if (!newUser.username) {
-      toast({ variant: 'destructive', title: 'Username is required' })
+      toast({ variant: 'destructive', title: 'O nome de usuário é obrigatório' })
       return
     }
     if (userType === 'human') {
       if (!newUser.password) {
-        toast({ variant: 'destructive', title: 'Password is required' })
+        toast({ variant: 'destructive', title: 'A senha é obrigatória' })
         return
       }
       const pwErrors = validatePassword(newUser.password)
       if (pwErrors.length > 0) {
         toast({
           variant: 'destructive',
-          title: 'Password requirements not met',
-          description: `Missing: ${pwErrors.join(', ')}`,
+          title: 'Requisitos de senha não atendidos',
+          description: `Faltando: ${pwErrors.join(', ')}`,
         })
         return
       }
@@ -220,23 +221,23 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Users</h1>
-          <p className="text-muted-foreground">Manage user accounts</p>
-        </div>
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add User
-        </Button>
-      </div>
+      <PageHeader
+        title="Usuários"
+        subtitle="Gerencie as contas de acesso"
+        actions={
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Adicionar Usuário
+          </Button>
+        }
+      />
 
       {/* Search */}
       <div className="flex gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search users..."
+            placeholder="Buscar usuários..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -247,9 +248,9 @@ export default function UsersPage() {
       {/* Users Table */}
       <Card>
         <CardHeader>
-          <CardTitle>All Users</CardTitle>
+          <CardTitle>Todos os Usuários</CardTitle>
           <CardDescription>
-            {userList.length} users total
+            {userList.length} usuários no total
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -258,19 +259,19 @@ export default function UsersPage() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           ) : userList.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No users found</p>
+            <p className="text-center text-muted-foreground py-8">Nenhum usuário encontrado</p>
           ) : (
             <div className="relative overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-xs uppercase text-muted-foreground border-b">
                   <tr>
-                    <th className="px-4 py-3 text-left">User</th>
-                    <th className="px-4 py-3 text-left">Type</th>
-                    <th className="px-4 py-3 text-left">Description</th>
+                    <th className="px-4 py-3 text-left">Usuário</th>
+                    <th className="px-4 py-3 text-left">Tipo</th>
+                    <th className="px-4 py-3 text-left">Descrição</th>
                     <th className="px-4 py-3 text-left">MFA</th>
-                    <th className="px-4 py-3 text-left">Last Login</th>
+                    <th className="px-4 py-3 text-left">Último Acesso</th>
                     <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -278,9 +279,9 @@ export default function UsersPage() {
                     <tr key={user.id} className="border-b">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <div className={`p-1.5 rounded ${user.user_type === 'service' ? 'bg-blue-500/20' : 'bg-primary/20'}`}>
+                          <div className={`p-1.5 rounded ${user.user_type === 'service' ? 'bg-primary/20' : 'bg-primary/20'}`}>
                             {user.user_type === 'service' ? (
-                              <Server className="h-4 w-4 text-blue-500" />
+                              <Server className="h-4 w-4 text-primary" />
                             ) : (
                               <UserIcon className="h-4 w-4 text-primary" />
                             )}
@@ -288,7 +289,7 @@ export default function UsersPage() {
                           <div>
                             <p className="font-medium">{user.username}</p>
                             <p className="text-muted-foreground text-xs">
-                              {user.email || (user.user_type === 'service' ? 'Service Account' : '-')}
+                              {user.email || (user.user_type === 'service' ? 'Conta de Serviço' : '-')}
                             </p>
                           </div>
                         </div>
@@ -297,10 +298,10 @@ export default function UsersPage() {
                         <div className="flex items-center gap-2">
                           <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded ${
                             user.user_type === 'service'
-                              ? 'bg-blue-500/20 text-blue-500'
+                              ? 'bg-primary/20 text-primary'
                               : 'bg-primary/20 text-primary'
                           }`}>
-                            {user.user_type === 'service' ? 'Service' : 'Human'}
+                            {user.user_type === 'service' ? 'Serviço' : 'Humano'}
                           </span>
                           <button
                             onClick={() => {
@@ -317,15 +318,15 @@ export default function UsersPage() {
                                 : 'cursor-pointer hover:opacity-80'
                             } ${
                               user.is_admin
-                                ? 'bg-yellow-500/20 text-yellow-500'
+                                ? 'bg-warning/20 text-warning'
                                 : 'bg-muted text-muted-foreground'
                             }`}
                             title={
                               user.id === currentUser?.id
-                                ? 'Cannot change your own admin role'
+                                ? 'Não é possível alterar sua própria função de administrador'
                                 : user.is_admin
-                                  ? 'Click to remove admin role'
-                                  : 'Click to grant admin role'
+                                  ? 'Clique para remover a função de administrador'
+                                  : 'Clique para conceder a função de administrador'
                             }
                           >
                             {user.is_admin ? (
@@ -334,7 +335,7 @@ export default function UsersPage() {
                               </>
                             ) : (
                               <>
-                                <ShieldOff className="h-3 w-3" /> User
+                                <ShieldOff className="h-3 w-3" /> Usuário
                               </>
                             )}
                           </button>
@@ -347,15 +348,15 @@ export default function UsersPage() {
                         {user.user_type === 'service' ? (
                           <span className="text-muted-foreground">N/A</span>
                         ) : user.mfa_enabled ? (
-                          <span className="text-green-500">Enabled</span>
+                          <span className="text-success">Ativado</span>
                         ) : user.mfa_required ? (
-                          <span className="text-yellow-500">Required</span>
+                          <span className="text-warning">Obrigatório</span>
                         ) : (
-                          <span className="text-muted-foreground">Disabled</span>
+                          <span className="text-muted-foreground">Desativado</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {user.last_login_at ? formatDate(user.last_login_at) : 'Never'}
+                        {user.last_login_at ? formatDate(user.last_login_at) : 'Nunca'}
                       </td>
                       <td className="px-4 py-3">
                         <button
@@ -373,18 +374,18 @@ export default function UsersPage() {
                               : 'cursor-pointer hover:opacity-80'
                           } ${
                             user.is_active
-                              ? 'bg-green-500/20 text-green-500'
-                              : 'bg-red-500/20 text-red-500'
+                              ? 'bg-success/20 text-success'
+                              : 'bg-destructive/20 text-destructive'
                           }`}
-                          title={user.id === currentUser?.id ? 'Cannot disable yourself' : (user.is_active ? 'Click to disable' : 'Click to enable')}
+                          title={user.id === currentUser?.id ? 'Não é possível desativar a si mesmo' : (user.is_active ? 'Clique para desativar' : 'Clique para ativar')}
                         >
                           {user.is_active ? (
                             <>
-                              <UserCheck className="h-3 w-3" /> Active
+                              <UserCheck className="h-3 w-3" /> Ativo
                             </>
                           ) : (
                             <>
-                              <UserX className="h-3 w-3" /> Inactive
+                              <UserX className="h-3 w-3" /> Inativo
                             </>
                           )}
                         </button>
@@ -395,7 +396,7 @@ export default function UsersPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              title="Regenerate API Key"
+                              title="Regenerar Chave de API"
                               onClick={() => regenerateApiKeyMutation.mutate({ id: user.id, username: user.username })}
                             >
                               <Key className="h-4 w-4" />
@@ -404,7 +405,7 @@ export default function UsersPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              title="Reset password"
+                              title="Redefinir senha"
                               onClick={() => resetPasswordMutation.mutate({ id: user.id, username: user.username })}
                             >
                               <Key className="h-4 w-4" />
@@ -413,10 +414,10 @@ export default function UsersPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            title={user.id === currentUser?.id ? 'Cannot delete yourself' : 'Delete user'}
+                            title={user.id === currentUser?.id ? 'Não é possível excluir a si mesmo' : 'Excluir usuário'}
                             onClick={() => setUserToDelete(user)}
                             disabled={user.id === currentUser?.id}
-                            className={user.id === currentUser?.id ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-500'}
+                            className={user.id === currentUser?.id ? 'opacity-50 cursor-not-allowed' : 'hover:text-destructive'}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -436,7 +437,7 @@ export default function UsersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-background rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Create New User</h2>
+              <h2 className="text-xl font-bold">Criar Novo Usuário</h2>
               <Button variant="ghost" size="sm" onClick={closeModal}>
                 <X className="h-4 w-4" />
               </Button>
@@ -449,21 +450,21 @@ export default function UsersPage() {
                 onClick={() => setUserType('human')}
                 className="flex-1"
               >
-                Human User
+                Usuário Humano
               </Button>
               <Button
                 variant={userType === 'service' ? 'default' : 'outline'}
                 onClick={() => setUserType('service')}
                 className="flex-1"
               >
-                Service Account
+                Conta de Serviço
               </Button>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="new-username">
-                  {userType === 'service' ? 'Server Name' : 'Username'}
+                  {userType === 'service' ? 'Nome do Servidor' : 'Nome de Usuário'}
                 </Label>
                 <Input
                   id="new-username"
@@ -471,29 +472,29 @@ export default function UsersPage() {
                   onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
                   placeholder={userType === 'service' ? 'server-backup-01' : 'john_doe'}
                 />
-                <p className="text-xs text-muted-foreground">Letters, numbers, underscore, hyphen only</p>
+                <p className="text-xs text-muted-foreground">Apenas letras, números, sublinhado e hífen</p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description (optional)</Label>
+                <Label htmlFor="description">Descrição (opcional)</Label>
                 <Input
                   id="description"
                   value={newUser.description}
                   onChange={(e) => setNewUser({ ...newUser, description: e.target.value })}
-                  placeholder={userType === 'service' ? 'Backup server - datacenter 1' : 'IT Department - John'}
+                  placeholder={userType === 'service' ? 'Servidor de backup - datacenter 1' : 'Departamento de TI - João'}
                 />
               </div>
 
               {userType === 'human' && (
                 <div className="space-y-2">
-                  <Label htmlFor="new-password">Password</Label>
+                  <Label htmlFor="new-password">Senha</Label>
                   <div className="relative">
                     <Input
                       id="new-password"
                       type={showPassword ? 'text' : 'password'}
                       value={newUser.password}
                       onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                      placeholder="Enter password"
+                      placeholder="Digite a senha"
                       className="pr-10"
                     />
                     <Button
@@ -511,13 +512,13 @@ export default function UsersPage() {
                     </Button>
                   </div>
                   <div className="text-xs text-muted-foreground space-y-1">
-                    <p>Password requirements:</p>
+                    <p>Requisitos da senha:</p>
                     <ul className="list-disc list-inside">
-                      <li className={newUser.password.length >= 12 ? 'text-green-500' : ''}>At least 12 characters</li>
-                      <li className={/[A-Z]/.test(newUser.password) ? 'text-green-500' : ''}>Uppercase letter</li>
-                      <li className={/[a-z]/.test(newUser.password) ? 'text-green-500' : ''}>Lowercase letter</li>
-                      <li className={/\d/.test(newUser.password) ? 'text-green-500' : ''}>Number</li>
-                      <li className={/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(newUser.password) ? 'text-green-500' : ''}>Special character (!@#$%^&*...)</li>
+                      <li className={newUser.password.length >= 12 ? 'text-success' : ''}>Pelo menos 12 caracteres</li>
+                      <li className={/[A-Z]/.test(newUser.password) ? 'text-success' : ''}>Letra maiúscula</li>
+                      <li className={/[a-z]/.test(newUser.password) ? 'text-success' : ''}>Letra minúscula</li>
+                      <li className={/\d/.test(newUser.password) ? 'text-success' : ''}>Número</li>
+                      <li className={/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(newUser.password) ? 'text-success' : ''}>Caractere especial (!@#$%^&*...)</li>
                     </ul>
                   </div>
                 </div>
@@ -531,22 +532,22 @@ export default function UsersPage() {
                   onChange={(e) => setNewUser({ ...newUser, is_admin: e.target.checked })}
                   className="h-4 w-4"
                 />
-                <Label htmlFor="new-admin">Administrator</Label>
+                <Label htmlFor="new-admin">Administrador</Label>
               </div>
 
               <div className="bg-muted p-3 rounded text-sm">
                 {userType === 'service' ? (
                   <>
-                    <p className="font-medium">Service Account</p>
+                    <p className="font-medium">Conta de Serviço</p>
                     <p className="text-muted-foreground">
-                      An API key will be generated automatically. Store it securely — it will only be shown once.
+                      Uma chave de API será gerada automaticamente. Armazene-a com segurança — ela será exibida apenas uma vez.
                     </p>
                   </>
                 ) : (
                   <>
-                    <p className="font-medium">Human User</p>
+                    <p className="font-medium">Usuário Humano</p>
                     <p className="text-muted-foreground">
-                      Regular user account for manual VPN connections.
+                      Conta de usuário comum para conexões VPN manuais.
                     </p>
                   </>
                 )}
@@ -555,13 +556,13 @@ export default function UsersPage() {
 
             <div className="flex gap-2 justify-end pt-4">
               <Button variant="outline" onClick={closeModal}>
-                Cancel
+                Cancelar
               </Button>
               <Button
                 onClick={handleCreateUser}
                 disabled={createUserMutation.isPending}
               >
-                {createUserMutation.isPending ? 'Creating...' : 'Create'}
+                {createUserMutation.isPending ? 'Criando...' : 'Criar'}
               </Button>
             </div>
           </div>
@@ -572,26 +573,26 @@ export default function UsersPage() {
       {userToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-background rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center gap-3 text-red-500">
+            <div className="flex items-center gap-3 text-destructive">
               <AlertTriangle className="h-6 w-6" />
-              <h2 className="text-xl font-bold">Delete User</h2>
+              <h2 className="text-xl font-bold">Excluir Usuário</h2>
             </div>
 
             <div className="space-y-3">
               <p className="text-muted-foreground">
-                This action cannot be undone. This will permanently delete the user
+                Esta ação não pode ser desfeita. Isso excluirá permanentemente o usuário
                 <span className="font-mono font-bold text-foreground"> {userToDelete.username}</span>.
               </p>
 
               <div className="space-y-2">
                 <Label htmlFor="confirm-username">
-                  Type <span className="font-mono font-bold">{userToDelete.username}</span> to confirm:
+                  Digite <span className="font-mono font-bold">{userToDelete.username}</span> para confirmar:
                 </Label>
                 <Input
                   id="confirm-username"
                   value={deleteConfirmUsername}
                   onChange={(e) => setDeleteConfirmUsername(e.target.value)}
-                  placeholder="Enter username to confirm"
+                  placeholder="Digite o nome de usuário para confirmar"
                   className="font-mono"
                 />
               </div>
@@ -605,14 +606,14 @@ export default function UsersPage() {
                   setDeleteConfirmUsername('')
                 }}
               >
-                Cancel
+                Cancelar
               </Button>
               <Button
                 variant="destructive"
                 onClick={() => deleteUserMutation.mutate(userToDelete.id)}
                 disabled={deleteConfirmUsername !== userToDelete.username || deleteUserMutation.isPending}
               >
-                {deleteUserMutation.isPending ? 'Deleting...' : 'Delete User'}
+                {deleteUserMutation.isPending ? 'Excluindo...' : 'Excluir Usuário'}
               </Button>
             </div>
           </div>
@@ -623,14 +624,14 @@ export default function UsersPage() {
       {newPasswordInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-background rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center gap-3 text-green-500">
+            <div className="flex items-center gap-3 text-success">
               <Key className="h-6 w-6" />
-              <h2 className="text-xl font-bold">Password Reset</h2>
+              <h2 className="text-xl font-bold">Senha Redefinida</h2>
             </div>
 
             <div className="space-y-3">
               <p className="text-muted-foreground">
-                New password generated for <span className="font-bold text-foreground">{newPasswordInfo.username}</span>:
+                Nova senha gerada para <span className="font-bold text-foreground">{newPasswordInfo.username}</span>:
               </p>
 
               <div className="flex items-center gap-2">
@@ -645,26 +646,26 @@ export default function UsersPage() {
                   onClick={() => {
                     navigator.clipboard.writeText(newPasswordInfo.password)
                     setPasswordCopied(true)
-                    toast({ title: 'Password copied to clipboard' })
+                    toast({ title: 'Senha copiada para a área de transferência' })
                   }}
-                  title="Copy password"
+                  title="Copiar senha"
                 >
                   {passwordCopied ? (
-                    <Check className="h-4 w-4 text-green-500" />
+                    <Check className="h-4 w-4 text-success" />
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}
                 </Button>
               </div>
 
-              <p className="text-xs text-yellow-500">
-                Make sure to copy this password now. You won't be able to see it again.
+              <p className="text-xs text-warning">
+                Certifique-se de copiar esta senha agora. Você não poderá vê-la novamente.
               </p>
             </div>
 
             <div className="flex justify-end pt-4">
               <Button onClick={() => setNewPasswordInfo(null)}>
-                Close
+                Fechar
               </Button>
             </div>
           </div>
@@ -675,14 +676,14 @@ export default function UsersPage() {
       {apiKeyInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-background rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center gap-3 text-green-500">
+            <div className="flex items-center gap-3 text-success">
               <Key className="h-6 w-6" />
-              <h2 className="text-xl font-bold">API Key</h2>
+              <h2 className="text-xl font-bold">Chave de API</h2>
             </div>
 
             <div className="space-y-3">
               <p className="text-muted-foreground">
-                API key for service account <span className="font-bold text-foreground">{apiKeyInfo.username}</span>:
+                Chave de API para a conta de serviço <span className="font-bold text-foreground">{apiKeyInfo.username}</span>:
               </p>
 
               <div className="flex items-center gap-2">
@@ -697,26 +698,26 @@ export default function UsersPage() {
                   onClick={() => {
                     navigator.clipboard.writeText(apiKeyInfo.apiKey)
                     setApiKeyCopied(true)
-                    toast({ title: 'API key copied to clipboard' })
+                    toast({ title: 'Chave de API copiada para a área de transferência' })
                   }}
-                  title="Copy API key"
+                  title="Copiar chave de API"
                 >
                   {apiKeyCopied ? (
-                    <Check className="h-4 w-4 text-green-500" />
+                    <Check className="h-4 w-4 text-success" />
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}
                 </Button>
               </div>
 
-              <p className="text-xs text-yellow-500">
-                Store this API key securely. It will not be shown again.
+              <p className="text-xs text-warning">
+                Armazene esta chave de API com segurança. Ela não será exibida novamente.
               </p>
             </div>
 
             <div className="flex justify-end pt-4">
               <Button onClick={() => setApiKeyInfo(null)}>
-                Close
+                Fechar
               </Button>
             </div>
           </div>

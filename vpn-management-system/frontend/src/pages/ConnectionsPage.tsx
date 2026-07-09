@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
+import { PageHeader } from '@/components/PageHeader'
 import { formatBytes, formatDuration, formatDate } from '@/lib/utils'
 import { Activity, RefreshCw, XCircle, Loader2 } from 'lucide-react'
 import type { Connection } from '@/types'
@@ -84,10 +85,10 @@ export default function ConnectionsPage() {
       fetchActive()
       refetchHistory()
       if (isAdmin) refetchStats()
-      toast({ title: 'Connection terminated' })
+      toast({ title: 'Conexão encerrada' })
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to disconnect' })
+      toast({ variant: 'destructive', title: 'Falha ao desconectar' })
     },
   })
 
@@ -97,10 +98,10 @@ export default function ConnectionsPage() {
       fetchActive()
       refetchHistory()
       if (isAdmin) refetchStats()
-      toast({ title: 'Stale connections cleaned up' })
+      toast({ title: 'Conexões obsoletas removidas' })
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to cleanup' })
+      toast({ variant: 'destructive', title: 'Falha na limpeza' })
     },
   })
 
@@ -109,11 +110,11 @@ export default function ConnectionsPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-        return 'bg-green-500/20 text-green-500'
+        return 'bg-success/20 text-success'
       case 'disconnected':
         return 'bg-muted text-muted-foreground'
       case 'banned':
-        return 'bg-red-500/20 text-red-500'
+        return 'bg-destructive/20 text-destructive'
       default:
         return 'bg-muted text-muted-foreground'
     }
@@ -121,30 +122,30 @@ export default function ConnectionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Connections</h1>
-          <p className="text-muted-foreground">Monitor VPN connections</p>
-        </div>
-        {isAdmin && (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
-              {refreshing ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Refresh
-            </Button>
-            <Button variant="outline" onClick={() => cleanupMutation.mutate()} disabled={cleanupMutation.isPending}>
-              {cleanupMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Cleanup Stale
-            </Button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title="Conexões"
+        subtitle="Sessões ativas e histórico"
+        actions={
+          isAdmin ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
+                {refreshing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Atualizar
+              </Button>
+              <Button variant="outline" onClick={() => cleanupMutation.mutate()} disabled={cleanupMutation.isPending}>
+                {cleanupMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : null}
+                Limpar Obsoletas
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
 
       {/* Stats (Admin) */}
       {isAdmin && stats && (
@@ -152,7 +153,7 @@ export default function ConnectionsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Active Connections
+                Conexões Ativas
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -162,7 +163,7 @@ export default function ConnectionsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Active Users
+                Usuários Ativos
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -172,7 +173,7 @@ export default function ConnectionsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Data Sent
+                Dados Enviados
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -182,7 +183,7 @@ export default function ConnectionsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Data Received
+                Dados Recebidos
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -197,17 +198,17 @@ export default function ConnectionsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-green-500" />
-              Active Connections
+              <Activity className="h-5 w-5 text-success" />
+              Conexões Ativas
             </CardTitle>
-            <CardDescription>{activeConnections.length} connections currently active</CardDescription>
+            <CardDescription>{activeConnections.length} conexões ativas no momento</CardDescription>
           </CardHeader>
           <CardContent>
             {activeError ? (
               <div className="text-center py-8">
-                <p className="text-red-500">Failed to load active connections</p>
+                <p className="text-destructive">Falha ao carregar conexões ativas</p>
                 <Button variant="outline" size="sm" className="mt-2" onClick={() => fetchActive()}>
-                  Retry
+                  Tentar novamente
                 </Button>
               </div>
             ) : activeLoading && activeConnections.length === 0 ? (
@@ -215,19 +216,19 @@ export default function ConnectionsPage() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
               </div>
             ) : activeConnections.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No active connections</p>
+              <p className="text-center text-muted-foreground py-8">Nenhuma conexão ativa</p>
             ) : (
               <div className="relative overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-xs uppercase text-muted-foreground border-b">
                     <tr>
-                      <th className="px-4 py-3 text-left">User</th>
-                      <th className="px-4 py-3 text-left">VPN IP</th>
-                      <th className="px-4 py-3 text-left">Source IP</th>
-                      <th className="px-4 py-3 text-left">Connected</th>
-                      <th className="px-4 py-3 text-left">Duration</th>
-                      <th className="px-4 py-3 text-left">Traffic</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
+                      <th className="px-4 py-3 text-left">Usuário</th>
+                      <th className="px-4 py-3 text-left">IP VPN</th>
+                      <th className="px-4 py-3 text-left">IP de Origem</th>
+                      <th className="px-4 py-3 text-left">Conectado</th>
+                      <th className="px-4 py-3 text-left">Duração</th>
+                      <th className="px-4 py-3 text-left">Tráfego</th>
+                      <th className="px-4 py-3 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -241,9 +242,9 @@ export default function ConnectionsPage() {
                         </td>
                         <td className="px-4 py-3">{formatDuration(conn.duration_seconds)}</td>
                         <td className="px-4 py-3">
-                          <span className="text-green-500">{formatBytes(conn.bytes_sent)}</span>
+                          <span className="text-success">{formatBytes(conn.bytes_sent)}</span>
                           {' / '}
-                          <span className="text-blue-500">{formatBytes(conn.bytes_received)}</span>
+                          <span className="text-primary">{formatBytes(conn.bytes_received)}</span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <Button
@@ -253,9 +254,9 @@ export default function ConnectionsPage() {
                             disabled={disconnectMutation.isPending}
                           >
                             {disconnectMutation.isPending && disconnectMutation.variables === conn.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-red-500" />
+                              <Loader2 className="h-4 w-4 animate-spin text-destructive" />
                             ) : (
-                              <XCircle className="h-4 w-4 text-red-500" />
+                              <XCircle className="h-4 w-4 text-destructive" />
                             )}
                           </Button>
                         </td>
@@ -272,8 +273,8 @@ export default function ConnectionsPage() {
       {/* Connection History */}
       <Card>
         <CardHeader>
-          <CardTitle>Connection History</CardTitle>
-          <CardDescription>Recent VPN connection logs</CardDescription>
+          <CardTitle>Histórico de Conexões</CardTitle>
+          <CardDescription>Registros recentes de conexões VPN</CardDescription>
         </CardHeader>
         <CardContent>
           {myLoading ? (
@@ -281,19 +282,19 @@ export default function ConnectionsPage() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           ) : myList.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No connection history</p>
+            <p className="text-center text-muted-foreground py-8">Nenhum histórico de conexão</p>
           ) : (
             <div className="relative overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-xs uppercase text-muted-foreground border-b">
                   <tr>
-                    <th className="px-4 py-3 text-left">User</th>
+                    <th className="px-4 py-3 text-left">Usuário</th>
                     <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">VPN IP</th>
-                    <th className="px-4 py-3 text-left">Source IP</th>
-                    <th className="px-4 py-3 text-left">Connected</th>
-                    <th className="px-4 py-3 text-left">Duration</th>
-                    <th className="px-4 py-3 text-left">Traffic (Out / In)</th>
+                    <th className="px-4 py-3 text-left">IP VPN</th>
+                    <th className="px-4 py-3 text-left">IP de Origem</th>
+                    <th className="px-4 py-3 text-left">Conectado</th>
+                    <th className="px-4 py-3 text-left">Duração</th>
+                    <th className="px-4 py-3 text-left">Tráfego (Saída / Entrada)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -312,9 +313,9 @@ export default function ConnectionsPage() {
                       </td>
                       <td className="px-4 py-3">{formatDuration(conn.duration_seconds)}</td>
                       <td className="px-4 py-3">
-                        <span className="text-green-500">{formatBytes(conn.bytes_sent)}</span>
+                        <span className="text-success">{formatBytes(conn.bytes_sent)}</span>
                         {' / '}
-                        <span className="text-blue-500">{formatBytes(conn.bytes_received)}</span>
+                        <span className="text-primary">{formatBytes(conn.bytes_received)}</span>
                       </td>
                     </tr>
                   ))}
@@ -329,10 +330,10 @@ export default function ConnectionsPage() {
       <Dialog open={!!disconnectTarget} onOpenChange={(open) => !open && setDisconnectTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Disconnect Client</DialogTitle>
+            <DialogTitle>Desconectar Cliente</DialogTitle>
             <DialogDescription>
-              Are you sure you want to disconnect <strong>{disconnectTarget?.username || disconnectTarget?.user_id}</strong> ({disconnectTarget?.vpn_ip})?
-              This will immediately terminate their VPN session.
+              Tem certeza de que deseja desconectar <strong>{disconnectTarget?.username || disconnectTarget?.user_id}</strong> ({disconnectTarget?.vpn_ip})?
+              Isso encerrará imediatamente a sessão VPN.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -341,7 +342,7 @@ export default function ConnectionsPage() {
               onClick={() => setDisconnectTarget(null)}
               disabled={disconnectMutation.isPending}
             >
-              Cancel
+              Cancelar
             </Button>
             <Button
               variant="destructive"
@@ -353,7 +354,7 @@ export default function ConnectionsPage() {
               ) : (
                 <XCircle className="h-4 w-4 mr-2" />
               )}
-              Disconnect
+              Desconectar
             </Button>
           </DialogFooter>
         </DialogContent>

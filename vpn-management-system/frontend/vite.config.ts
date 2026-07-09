@@ -12,9 +12,17 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      // Dev proxy. Defaults to a local backend; set VITE_DEV_API to point the
+      // preview at a live server, e.g. VITE_DEV_API=https://vpn-aws.numerama.com.br
       '/api': {
-        target: 'http://localhost:8000',
+        target: process.env.VITE_DEV_API || 'http://localhost:8000',
         changeOrigin: true,
+        secure: false,
+      },
+      '/health': {
+        target: process.env.VITE_DEV_API || 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
       },
     },
   },

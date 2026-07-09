@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from '@/hooks/use-toast'
 import { formatDate } from '@/lib/utils'
 import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server, Pencil } from 'lucide-react'
+import { PageHeader } from '@/components/PageHeader'
 import type { FirewallRule } from '@/types'
 
 interface QuickRuleStatus {
@@ -60,28 +61,28 @@ interface NewDNATForm {
 
 const QUICK_RULE_CONFIG: Record<string, { label: string; subtitle: string; icon: React.ElementType; color: string }> = {
   'block-client-to-client': {
-    label: 'Block Client-to-Client',
-    subtitle: 'Prevent VPN clients from reaching each other',
+    label: 'Bloquear Cliente-a-Cliente',
+    subtitle: 'Impede que os clientes VPN se comuniquem entre si',
     icon: Users,
-    color: 'text-red-500',
+    color: 'text-destructive',
   },
   'allow-internal-network': {
-    label: 'Allow Private Network Access',
-    subtitle: 'Let VPN clients reach the private subnet behind this server',
+    label: 'Permitir Acesso à Rede Privada',
+    subtitle: 'Permite que os clientes VPN alcancem a sub-rede privada atrás deste servidor',
     icon: Network,
-    color: 'text-green-500',
+    color: 'text-success',
   },
 }
 
 const ACTION_OPTIONS = [
-  { value: 'accept', label: 'Accept - Allow traffic' },
-  { value: 'drop', label: 'Drop - Silently discard' },
-  { value: 'reject', label: 'Reject - Discard with response' },
-  { value: 'limit', label: 'Limit - Rate limit traffic' },
+  { value: 'accept', label: 'Accept - Permitir tráfego' },
+  { value: 'drop', label: 'Drop - Descartar silenciosamente' },
+  { value: 'reject', label: 'Reject - Descartar com resposta' },
+  { value: 'limit', label: 'Limit - Limitar taxa de tráfego' },
 ]
 
 const PROTOCOL_OPTIONS = [
-  { value: 'all', label: 'All Protocols' },
+  { value: 'all', label: 'Todos os Protocolos' },
   { value: 'tcp', label: 'TCP' },
   { value: 'udp', label: 'UDP' },
   { value: 'icmp', label: 'ICMP' },
@@ -172,11 +173,11 @@ export default function FirewallPage() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
       queryClient.invalidateQueries({ queryKey: ['firewall-quick-rules'] })
-      toast({ title: 'Rule deleted' })
+      toast({ title: 'Regra excluída' })
       await applyRulesAfterChange()
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to delete rule' })
+      toast({ variant: 'destructive', title: 'Falha ao excluir regra' })
     },
   })
 
@@ -186,11 +187,11 @@ export default function FirewallPage() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
       queryClient.invalidateQueries({ queryKey: ['firewall-quick-rules'] })
-      toast({ title: 'Rule status updated' })
+      toast({ title: 'Status da regra atualizado' })
       await applyRulesAfterChange()
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update rule' })
+      toast({ variant: 'destructive', title: 'Falha ao atualizar regra' })
     },
   })
 
@@ -199,11 +200,11 @@ export default function FirewallPage() {
       firewallApi.updateRule(id, { priority }),
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
-      toast({ title: 'Rule order updated' })
+      toast({ title: 'Ordem das regras atualizada' })
       await applyRulesAfterChange()
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update order' })
+      toast({ variant: 'destructive', title: 'Falha ao atualizar ordem' })
     },
   })
 
@@ -213,11 +214,11 @@ export default function FirewallPage() {
       queryClient.invalidateQueries({ queryKey: ['firewall-quick-rules'] })
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
       const config = QUICK_RULE_CONFIG[ruleKey]
-      toast({ title: `${config?.label || ruleKey} toggled` })
+      toast({ title: `${config?.label || ruleKey} alternada` })
       await applyRulesAfterChange()
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to toggle rule' })
+      toast({ variant: 'destructive', title: 'Falha ao alternar regra' })
     },
   })
 
@@ -237,7 +238,7 @@ export default function FirewallPage() {
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
-      toast({ title: 'Rule created successfully' })
+      toast({ title: 'Regra criada com sucesso' })
       setIsAddModalOpen(false)
       setNewRule(initialFormState)
       await applyRulesAfterChange()
@@ -245,8 +246,8 @@ export default function FirewallPage() {
     onError: (error: Error & { response?: { data?: { detail?: string } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to create rule',
-        description: error.response?.data?.detail || 'Unknown error',
+        title: 'Falha ao criar regra',
+        description: error.response?.data?.detail || 'Erro desconhecido',
       })
     },
   })
@@ -267,7 +268,7 @@ export default function FirewallPage() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['nat-rules'] })
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
-      toast({ title: 'Port forwarding rule created' })
+      toast({ title: 'Regra de encaminhamento de porta criada' })
       setIsDNATModalOpen(false)
       setNewDNAT(initialDNATFormState)
       await applyRulesAfterChange()
@@ -275,8 +276,8 @@ export default function FirewallPage() {
     onError: (error: Error & { response?: { data?: { detail?: string } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to create rule',
-        description: error.response?.data?.detail || 'Unknown error',
+        title: 'Falha ao criar regra',
+        description: error.response?.data?.detail || 'Erro desconhecido',
       })
     },
   })
@@ -287,11 +288,11 @@ export default function FirewallPage() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['nat-rules'] })
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
-      toast({ title: 'NAT rule status updated' })
+      toast({ title: 'Status da regra NAT atualizado' })
       await applyRulesAfterChange()
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update rule' })
+      toast({ variant: 'destructive', title: 'Falha ao atualizar regra' })
     },
   })
 
@@ -300,11 +301,11 @@ export default function FirewallPage() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['nat-rules'] })
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
-      toast({ title: 'NAT rule deleted' })
+      toast({ title: 'Regra NAT excluída' })
       await applyRulesAfterChange()
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to delete rule' })
+      toast({ variant: 'destructive', title: 'Falha ao excluir regra' })
     },
   })
 
@@ -314,7 +315,7 @@ export default function FirewallPage() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['nat-rules'] })
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
-      toast({ title: 'NAT rule updated' })
+      toast({ title: 'Regra NAT atualizada' })
       setIsEditDNATModalOpen(false)
       setEditingDNAT(null)
       await applyRulesAfterChange()
@@ -322,8 +323,8 @@ export default function FirewallPage() {
     onError: (error: Error & { response?: { data?: { detail?: string } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to update rule',
-        description: error.response?.data?.detail || 'Unknown error',
+        title: 'Falha ao atualizar regra',
+        description: error.response?.data?.detail || 'Erro desconhecido',
       })
     },
   })
@@ -367,13 +368,13 @@ export default function FirewallPage() {
   const getActionColor = (action: string) => {
     switch (action) {
       case 'accept':
-        return 'bg-green-500/20 text-green-500'
+        return 'bg-success/20 text-success'
       case 'drop':
-        return 'bg-red-500/20 text-red-500'
+        return 'bg-destructive/20 text-destructive'
       case 'reject':
         return 'bg-orange-500/20 text-orange-500'
       case 'limit':
-        return 'bg-yellow-500/20 text-yellow-500'
+        return 'bg-warning/20 text-warning'
       default:
         return 'bg-muted text-muted-foreground'
     }
@@ -435,7 +436,7 @@ export default function FirewallPage() {
   const handleCreateRule = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newRule.name.trim()) {
-      toast({ variant: 'destructive', title: 'Rule name is required' })
+      toast({ variant: 'destructive', title: 'O nome da regra é obrigatório' })
       return
     }
     createRuleMutation.mutate(newRule)
@@ -444,11 +445,11 @@ export default function FirewallPage() {
   const handleCreateDNAT = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newDNAT.name.trim()) {
-      toast({ variant: 'destructive', title: 'Rule name is required' })
+      toast({ variant: 'destructive', title: 'O nome da regra é obrigatório' })
       return
     }
     if (!newDNAT.external_port || !newDNAT.internal_ip || !newDNAT.internal_port) {
-      toast({ variant: 'destructive', title: 'All port and IP fields are required' })
+      toast({ variant: 'destructive', title: 'Todos os campos de porta e IP são obrigatórios' })
       return
     }
     createDNATMutation.mutate(newDNAT)
@@ -458,7 +459,7 @@ export default function FirewallPage() {
     setNewDNAT({
       ...newDNAT,
       name: `forward-${preset.name.toLowerCase()}`,
-      description: `Forward ${preset.name} to internal server`,
+      description: `Encaminhar ${preset.name} para servidor interno`,
       protocol: preset.protocol,
       external_port: String(preset.port),
       internal_port: String(preset.port),
@@ -467,14 +468,7 @@ export default function FirewallPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">OpenVPN Firewall</h1>
-          <p className="text-muted-foreground">
-            Controls traffic rules for VPN clients on this server. Rules are applied inside the OpenVPN container.
-          </p>
-        </div>
-      </div>
+      <PageHeader title="Firewall" subtitle="Regras de acesso da VPN" />
 
       {/* Status */}
       {status && (
@@ -482,29 +476,29 @@ export default function FirewallPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
-              Firewall Status
+              Status do Firewall
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-4">
               <div>
-                <p className="text-sm text-muted-foreground">Engine</p>
+                <p className="text-sm text-muted-foreground">Motor</p>
                 <p className="font-medium">{status.engine || 'nftables'}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Status</p>
-                <p className={status.is_active ? 'text-green-500' : 'text-red-500'}>
-                  {status.is_active ? 'Active' : 'Inactive'}
+                <p className={status.is_active ? 'text-success' : 'text-destructive'}>
+                  {status.is_active ? 'Ativo' : 'Inativo'}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Active Rules</p>
+                <p className="text-sm text-muted-foreground">Regras Ativas</p>
                 <p>{status.active_rules || 0}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Last Applied</p>
+                <p className="text-sm text-muted-foreground">Última Aplicação</p>
                 <p className="text-muted-foreground">
-                  {status.last_applied ? formatDate(status.last_applied) : 'Never'}
+                  {status.last_applied ? formatDate(status.last_applied) : 'Nunca'}
                 </p>
               </div>
             </div>
@@ -517,9 +511,9 @@ export default function FirewallPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5" />
-            Quick Rules
+            Regras Rápidas
           </CardTitle>
-          <CardDescription>Toggle common OpenVPN firewall rules with one click</CardDescription>
+          <CardDescription>Ative regras comuns do firewall OpenVPN com um clique</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
@@ -562,7 +556,7 @@ export default function FirewallPage() {
             })}
           </div>
           <p className="text-xs text-muted-foreground mt-4">
-            Note: Click "Apply Rules" to activate changes on the firewall.
+            Nota: Clique em "Aplicar Regras" para ativar as alterações no firewall.
           </p>
         </CardContent>
       </Card>
@@ -573,13 +567,13 @@ export default function FirewallPage() {
           <div>
             <CardTitle className="flex items-center gap-2">
               <Server className="h-5 w-5" />
-              Port Forwarding (DNAT)
+              Encaminhamento de Portas (DNAT)
             </CardTitle>
-          <CardDescription>Forward external ports on this server to internal hosts on the private network (DNAT via NAT agent)</CardDescription>
+          <CardDescription>Encaminhe portas externas deste servidor para hosts internos na rede privada (DNAT via agente NAT)</CardDescription>
           </div>
           <Button onClick={() => setIsDNATModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Add Forwarding
+            Adicionar Encaminhamento
           </Button>
         </CardHeader>
         <CardContent>
@@ -589,10 +583,10 @@ export default function FirewallPage() {
             </div>
           ) : natRuleList.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-muted-foreground mb-4">No port forwarding rules configured</p>
+              <p className="text-muted-foreground mb-4">Nenhuma regra de encaminhamento de porta configurada</p>
               <Button variant="outline" onClick={() => setIsDNATModalOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Add Your First Forwarding Rule
+                Adicionar Sua Primeira Regra de Encaminhamento
               </Button>
             </div>
           ) : (
@@ -600,14 +594,14 @@ export default function FirewallPage() {
               <table className="w-full text-sm">
                 <thead className="text-xs uppercase text-muted-foreground border-b">
                   <tr>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Source</th>
-                    <th className="px-4 py-3 text-left">External Port</th>
+                    <th className="px-4 py-3 text-left">Nome</th>
+                    <th className="px-4 py-3 text-left">Origem</th>
+                    <th className="px-4 py-3 text-left">Porta Externa</th>
                     <th className="px-4 py-3 text-left"></th>
-                    <th className="px-4 py-3 text-left">Internal Destination</th>
-                    <th className="px-4 py-3 text-left">Protocol</th>
+                    <th className="px-4 py-3 text-left">Destino Interno</th>
+                    <th className="px-4 py-3 text-left">Protocolo</th>
                     <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -620,7 +614,7 @@ export default function FirewallPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs">
-                        {rule.source_network || <span className="text-muted-foreground">Any (*)</span>}
+                        {rule.source_network || <span className="text-muted-foreground">Qualquer (*)</span>}
                       </td>
                       <td className="px-4 py-3 font-mono">{rule.external_port}</td>
                       <td className="px-4 py-3">
@@ -636,12 +630,12 @@ export default function FirewallPage() {
                           disabled={toggleNATMutation.isPending}
                           className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors ${
                             rule.is_active
-                              ? 'bg-green-500/20 text-green-500 hover:bg-green-500/30'
+                              ? 'bg-success/20 text-success hover:bg-success/30'
                               : 'bg-muted text-muted-foreground hover:bg-muted/80'
                           }`}
                         >
                           {rule.is_active ? <Shield className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
-                          {rule.is_active ? 'Active' : 'Inactive'}
+                          {rule.is_active ? 'Ativo' : 'Inativo'}
                         </button>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -650,7 +644,7 @@ export default function FirewallPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => openEditDNAT(rule)}
-                            title="Edit rule"
+                            title="Editar regra"
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -659,7 +653,7 @@ export default function FirewallPage() {
                             size="sm"
                             onClick={() => deleteNATMutation.mutate(rule.id)}
                             className="text-destructive hover:text-destructive"
-                            title="Delete rule"
+                            title="Excluir regra"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -678,12 +672,12 @@ export default function FirewallPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Firewall Rules</CardTitle>
-            <CardDescription>{ruleList.length} rules applied to VPN traffic - drag rows to reorder priority</CardDescription>
+            <CardTitle>Regras do Firewall</CardTitle>
+            <CardDescription>{ruleList.length} regras aplicadas ao tráfego VPN - arraste as linhas para reordenar a prioridade</CardDescription>
           </div>
           <Button onClick={() => setIsAddModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Add Rule
+            Adicionar Regra
           </Button>
         </CardHeader>
         <CardContent>
@@ -693,7 +687,7 @@ export default function FirewallPage() {
             </div>
           ) : ruleList.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-muted-foreground">No firewall rules configured</p>
+              <p className="text-muted-foreground">Nenhuma regra de firewall configurada</p>
             </div>
           ) : (
             <div className="relative overflow-x-auto">
@@ -701,14 +695,14 @@ export default function FirewallPage() {
                 <thead className="text-xs uppercase text-muted-foreground border-b">
                   <tr>
                     <th className="px-2 py-3 text-left w-10"></th>
-                    <th className="px-4 py-3 text-left">Priority</th>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Description</th>
-                    <th className="px-4 py-3 text-left">Action</th>
-                    <th className="px-4 py-3 text-left">Protocol</th>
-                    <th className="px-4 py-3 text-left">Destination</th>
+                    <th className="px-4 py-3 text-left">Prioridade</th>
+                    <th className="px-4 py-3 text-left">Nome</th>
+                    <th className="px-4 py-3 text-left">Descrição</th>
+                    <th className="px-4 py-3 text-left">Ação</th>
+                    <th className="px-4 py-3 text-left">Protocolo</th>
+                    <th className="px-4 py-3 text-left">Destino</th>
                     <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -741,7 +735,7 @@ export default function FirewallPage() {
                       </td>
                       <td className="px-4 py-3 uppercase">{rule.protocol}</td>
                       <td className="px-4 py-3 font-mono text-xs">
-                        {rule.destination_network || 'any'}
+                        {rule.destination_network || 'qualquer'}
                         {rule.destination_port_range && `:${rule.destination_port_range}`}
                       </td>
                       <td className="px-4 py-3">
@@ -750,15 +744,15 @@ export default function FirewallPage() {
                           disabled={toggleRuleMutation.isPending}
                           className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors ${
                             rule.is_active
-                              ? 'bg-green-500/20 text-green-500 hover:bg-green-500/30'
+                              ? 'bg-success/20 text-success hover:bg-success/30'
                               : 'bg-muted text-muted-foreground hover:bg-muted/80'
                           }`}
                         >
                           {rule.is_active ? <Shield className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
-                          {rule.is_active ? 'Active' : 'Inactive'}
+                          {rule.is_active ? 'Ativo' : 'Inativo'}
                         </button>
                         {rule.is_system_rule && (
-                          <span className="ml-2 text-xs text-muted-foreground">(System)</span>
+                          <span className="ml-2 text-xs text-muted-foreground">(Sistema)</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -785,24 +779,24 @@ export default function FirewallPage() {
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
         <DialogContent onClose={() => setIsAddModalOpen(false)} className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Add Firewall Rule</DialogTitle>
+            <DialogTitle>Adicionar Regra de Firewall</DialogTitle>
             <DialogDescription>
-              Create a custom firewall rule. All fields except name are optional.
+              Crie uma regra de firewall personalizada. Todos os campos, exceto o nome, são opcionais.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateRule} className="space-y-4 mt-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="name">Rule Name *</Label>
+                <Label htmlFor="name">Nome da Regra *</Label>
                 <Input
                   id="name"
                   value={newRule.name}
                   onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
-                  placeholder="my-custom-rule"
+                  placeholder="minha-regra-personalizada"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="priority">Priority</Label>
+                <Label htmlFor="priority">Prioridade</Label>
                 <Input
                   id="priority"
                   type="number"
@@ -815,18 +809,18 @@ export default function FirewallPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">Descrição</Label>
               <Input
                 id="description"
                 value={newRule.description}
                 onChange={(e) => setNewRule({ ...newRule, description: e.target.value })}
-                placeholder="What does this rule do?"
+                placeholder="O que esta regra faz?"
               />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="action">Action</Label>
+                <Label htmlFor="action">Ação</Label>
                 <Select
                   id="action"
                   value={newRule.action}
@@ -835,7 +829,7 @@ export default function FirewallPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="protocol">Protocol</Label>
+                <Label htmlFor="protocol">Protocolo</Label>
                 <Select
                   id="protocol"
                   value={newRule.protocol}
@@ -847,44 +841,44 @@ export default function FirewallPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="source_network">Source Network</Label>
+                <Label htmlFor="source_network">Rede de Origem</Label>
                 <Input
                   id="source_network"
                   value={newRule.source_network}
                   onChange={(e) => setNewRule({ ...newRule, source_network: e.target.value })}
-                  placeholder="10.8.0.0/24 or leave empty for any"
+                  placeholder="10.8.0.0/24 ou deixe vazio para qualquer"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="destination_network">Destination Network</Label>
+                <Label htmlFor="destination_network">Rede de Destino</Label>
                 <Input
                   id="destination_network"
                   value={newRule.destination_network}
                   onChange={(e) => setNewRule({ ...newRule, destination_network: e.target.value })}
-                  placeholder="192.168.1.0/24 or leave empty for any"
+                  placeholder="192.168.1.0/24 ou deixe vazio para qualquer"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="destination_port_range">Destination Port(s)</Label>
+              <Label htmlFor="destination_port_range">Porta(s) de Destino</Label>
               <Input
                 id="destination_port_range"
                 value={newRule.destination_port_range}
                 onChange={(e) => setNewRule({ ...newRule, destination_port_range: e.target.value })}
-                placeholder="80 or 80,443 or 8000-9000"
+                placeholder="80 ou 80,443 ou 8000-9000"
               />
               <p className="text-xs text-muted-foreground">
-                Single port, comma-separated, or range (e.g., 80, 80,443, 8000-9000)
+                Porta única, separadas por vírgula ou intervalo (ex.: 80, 80,443, 8000-9000)
               </p>
             </div>
 
             <DialogFooter className="mt-6">
               <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>
-                Cancel
+                Cancelar
               </Button>
               <Button type="submit" disabled={createRuleMutation.isPending}>
-                {createRuleMutation.isPending ? 'Creating...' : 'Create Rule'}
+                {createRuleMutation.isPending ? 'Criando...' : 'Criar Regra'}
               </Button>
             </DialogFooter>
           </form>
@@ -895,15 +889,15 @@ export default function FirewallPage() {
       <Dialog open={isDNATModalOpen} onOpenChange={setIsDNATModalOpen}>
         <DialogContent onClose={() => setIsDNATModalOpen(false)} className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Port Forwarding Wizard</DialogTitle>
+            <DialogTitle>Assistente de Encaminhamento de Portas</DialogTitle>
             <DialogDescription>
-              Forward traffic from an external port to an internal server on your private network.
+              Encaminhe o tráfego de uma porta externa para um servidor interno na sua rede privada.
             </DialogDescription>
           </DialogHeader>
 
           {/* Service Presets */}
           <div className="mt-4">
-            <Label className="text-sm font-medium">Quick Presets</Label>
+            <Label className="text-sm font-medium">Predefinições Rápidas</Label>
             <div className="flex flex-wrap gap-2 mt-2">
               {SERVICE_PRESETS.map((preset) => (
                 <Button
@@ -923,7 +917,7 @@ export default function FirewallPage() {
           <form onSubmit={handleCreateDNAT} className="space-y-4 mt-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="dnat-name">Rule Name *</Label>
+                <Label htmlFor="dnat-name">Nome da Regra *</Label>
                 <Input
                   id="dnat-name"
                   value={newDNAT.name}
@@ -932,7 +926,7 @@ export default function FirewallPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="dnat-protocol">Protocol</Label>
+                <Label htmlFor="dnat-protocol">Protocolo</Label>
                 <Select
                   id="dnat-protocol"
                   value={newDNAT.protocol}
@@ -943,32 +937,32 @@ export default function FirewallPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="dnat-description">Description</Label>
+              <Label htmlFor="dnat-description">Descrição</Label>
               <Input
                 id="dnat-description"
                 value={newDNAT.description}
                 onChange={(e) => setNewDNAT({ ...newDNAT, description: e.target.value })}
-                placeholder="Forward to internal web server"
+                placeholder="Encaminhar para servidor web interno"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="dnat-source">Allowed Source IPs</Label>
+              <Label htmlFor="dnat-source">IPs de Origem Permitidos</Label>
               <Input
                 id="dnat-source"
                 value={newDNAT.source_network}
                 onChange={(e) => setNewDNAT({ ...newDNAT, source_network: e.target.value })}
-                placeholder="* (any)"
+                placeholder="* (qualquer)"
               />
               <p className="text-xs text-muted-foreground">
-                Use <code className="px-1 bg-muted rounded">*</code> for any source, or specify IP/CIDR (e.g. <code className="px-1 bg-muted rounded">203.0.113.10</code> or <code className="px-1 bg-muted rounded">10.0.0.0/24</code>)
+                Use <code className="px-1 bg-muted rounded">*</code> para qualquer origem, ou especifique IP/CIDR (ex.: <code className="px-1 bg-muted rounded">203.0.113.10</code> ou <code className="px-1 bg-muted rounded">10.0.0.0/24</code>)
               </p>
             </div>
 
             <div className="p-4 bg-muted/50 rounded-lg space-y-4">
               <div className="flex items-center gap-4">
                 <div className="flex-1 space-y-2">
-                  <Label htmlFor="external-port">External Port *</Label>
+                  <Label htmlFor="external-port">Porta Externa *</Label>
                   <Input
                     id="external-port"
                     type="number"
@@ -978,24 +972,24 @@ export default function FirewallPage() {
                     onChange={(e) => setNewDNAT({ ...newDNAT, external_port: e.target.value })}
                     placeholder="8080"
                   />
-                  <p className="text-xs text-muted-foreground">Port exposed on VPN server</p>
+                  <p className="text-xs text-muted-foreground">Porta exposta no servidor VPN</p>
                 </div>
 
                 <ArrowRight className="h-6 w-6 text-muted-foreground mt-2" />
 
                 <div className="flex-1 space-y-2">
-                  <Label htmlFor="internal-ip">Internal IP *</Label>
+                  <Label htmlFor="internal-ip">IP Interno *</Label>
                   <Input
                     id="internal-ip"
                     value={newDNAT.internal_ip}
                     onChange={(e) => setNewDNAT({ ...newDNAT, internal_ip: e.target.value })}
                     placeholder="192.168.1.100"
                   />
-                  <p className="text-xs text-muted-foreground">Private server IP</p>
+                  <p className="text-xs text-muted-foreground">IP do servidor privado</p>
                 </div>
 
                 <div className="w-24 space-y-2">
-                  <Label htmlFor="internal-port">Port *</Label>
+                  <Label htmlFor="internal-port">Porta *</Label>
                   <Input
                     id="internal-port"
                     type="number"
@@ -1009,19 +1003,19 @@ export default function FirewallPage() {
               </div>
             </div>
 
-            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-              <p className="text-sm text-blue-500">
-                <strong>Example:</strong> To expose an internal web server at 192.168.1.100:80
-                on external port 8080, set External Port = 8080, Internal IP = 192.168.1.100, Port = 80.
+            <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
+              <p className="text-sm text-primary">
+                <strong>Exemplo:</strong> Para expor um servidor web interno em 192.168.1.100:80
+                na porta externa 8080, defina Porta Externa = 8080, IP Interno = 192.168.1.100, Porta = 80.
               </p>
             </div>
 
             <DialogFooter className="mt-6">
               <Button type="button" variant="outline" onClick={() => setIsDNATModalOpen(false)}>
-                Cancel
+                Cancelar
               </Button>
               <Button type="submit" disabled={createDNATMutation.isPending}>
-                {createDNATMutation.isPending ? 'Creating...' : 'Create Forwarding Rule'}
+                {createDNATMutation.isPending ? 'Criando...' : 'Criar Regra de Encaminhamento'}
               </Button>
             </DialogFooter>
           </form>
@@ -1032,16 +1026,16 @@ export default function FirewallPage() {
       <Dialog open={isEditDNATModalOpen} onOpenChange={setIsEditDNATModalOpen}>
         <DialogContent onClose={() => setIsEditDNATModalOpen(false)} className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Edit Port Forwarding Rule</DialogTitle>
+            <DialogTitle>Editar Regra de Encaminhamento de Porta</DialogTitle>
             <DialogDescription>
-              Modify the port forwarding configuration.
+              Modifique a configuração de encaminhamento de porta.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleEditDNAT} className="space-y-4 mt-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="edit-dnat-name">Rule Name *</Label>
+                <Label htmlFor="edit-dnat-name">Nome da Regra *</Label>
                 <Input
                   id="edit-dnat-name"
                   value={editDNATForm.name}
@@ -1049,7 +1043,7 @@ export default function FirewallPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-dnat-protocol">Protocol</Label>
+                <Label htmlFor="edit-dnat-protocol">Protocolo</Label>
                 <Select
                   id="edit-dnat-protocol"
                   value={editDNATForm.protocol}
@@ -1060,7 +1054,7 @@ export default function FirewallPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-dnat-description">Description</Label>
+              <Label htmlFor="edit-dnat-description">Descrição</Label>
               <Input
                 id="edit-dnat-description"
                 value={editDNATForm.description}
@@ -1069,22 +1063,22 @@ export default function FirewallPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-dnat-source">Allowed Source IPs</Label>
+              <Label htmlFor="edit-dnat-source">IPs de Origem Permitidos</Label>
               <Input
                 id="edit-dnat-source"
                 value={editDNATForm.source_network}
                 onChange={(e) => setEditDNATForm({ ...editDNATForm, source_network: e.target.value })}
-                placeholder="* (any)"
+                placeholder="* (qualquer)"
               />
               <p className="text-xs text-muted-foreground">
-                Use <code className="px-1 bg-muted rounded">*</code> for any source, or specify IP/CIDR
+                Use <code className="px-1 bg-muted rounded">*</code> para qualquer origem, ou especifique IP/CIDR
               </p>
             </div>
 
             <div className="p-4 bg-muted/50 rounded-lg space-y-4">
               <div className="flex items-center gap-4">
                 <div className="flex-1 space-y-2">
-                  <Label htmlFor="edit-external-port">External Port *</Label>
+                  <Label htmlFor="edit-external-port">Porta Externa *</Label>
                   <Input
                     id="edit-external-port"
                     type="number"
@@ -1096,7 +1090,7 @@ export default function FirewallPage() {
                 </div>
                 <ArrowRight className="h-6 w-6 text-muted-foreground mt-2" />
                 <div className="flex-1 space-y-2">
-                  <Label htmlFor="edit-internal-ip">Internal IP *</Label>
+                  <Label htmlFor="edit-internal-ip">IP Interno *</Label>
                   <Input
                     id="edit-internal-ip"
                     value={editDNATForm.internal_ip}
@@ -1104,7 +1098,7 @@ export default function FirewallPage() {
                   />
                 </div>
                 <div className="w-24 space-y-2">
-                  <Label htmlFor="edit-internal-port">Port *</Label>
+                  <Label htmlFor="edit-internal-port">Porta *</Label>
                   <Input
                     id="edit-internal-port"
                     type="number"
@@ -1119,10 +1113,10 @@ export default function FirewallPage() {
 
             <DialogFooter className="mt-6">
               <Button type="button" variant="outline" onClick={() => setIsEditDNATModalOpen(false)}>
-                Cancel
+                Cancelar
               </Button>
               <Button type="submit" disabled={updateDNATMutation.isPending}>
-                {updateDNATMutation.isPending ? 'Saving...' : 'Save Changes'}
+                {updateDNATMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
               </Button>
             </DialogFooter>
           </form>

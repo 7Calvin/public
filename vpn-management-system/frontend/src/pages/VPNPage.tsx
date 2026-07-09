@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
+import { PageHeader } from '@/components/PageHeader'
 import { formatBytes } from '@/lib/utils'
 import { Download, RefreshCw, Shield, ShieldOff, Server, Settings, Save, Plus, X } from 'lucide-react'
 import type { VPNServerConfig } from '@/types'
@@ -173,14 +174,13 @@ export default function VPNPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">OpenVPN</h1>
-        <p className="text-muted-foreground">
-          {user?.is_admin
-            ? 'Manage VPN server configuration and download client files'
-            : 'Download VPN configuration file and connect using your username and password'}
-        </p>
-      </div>
+      <PageHeader
+        title="OpenVPN"
+        subtitle={user?.is_admin
+          ? 'Configuração do servidor VPN e perfis de cliente'
+          : 'Baixe seu perfil e conecte com usuário e senha'}
+      />
+
 
       {/* Quick Start - Download .ovpn for non-admin users */}
       {!user?.is_admin && (
@@ -222,7 +222,7 @@ export default function VPNPage() {
             <div className="grid gap-4 md:grid-cols-4">
               <div>
                 <p className="text-sm text-muted-foreground">Status</p>
-                <p className={serverStatus.is_running ? 'text-green-500' : 'text-red-500'}>
+                <p className={serverStatus.is_running ? 'text-success' : 'text-destructive'}>
                   {serverStatus.is_running ? 'Running' : 'Stopped'}
                 </p>
               </div>
@@ -381,7 +381,7 @@ export default function VPNPage() {
                   </div>
                 </div>
                 {!serverConfig?.network_editable && (
-                  <p className="text-xs text-yellow-500">Network settings are locked after creating VPN profiles</p>
+                  <p className="text-xs text-warning">Rede bloqueada após criar perfis VPN</p>
                 )}
 
                 {/* Redirect Gateway Toggle */}

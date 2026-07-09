@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
+import { PageHeader } from '@/components/PageHeader'
 import {
   Globe,
   Plus,
@@ -52,14 +53,14 @@ interface RouteForm {
 const SSL_MODE_OPTIONS = [
   { value: 'letsencrypt', label: "Let's Encrypt (HTTP-01)" },
   { value: 'letsencrypt_dns', label: "Let's Encrypt (DNS-01)" },
-  { value: 'custom', label: 'Custom Certificate' },
-  { value: 'none', label: 'No SSL (HTTP only)' },
+  { value: 'custom', label: 'Certificado personalizado' },
+  { value: 'none', label: 'Sem SSL (apenas HTTP)' },
 ]
 
 const HEALTH_CHECK_OPTIONS = [
   { value: 'http', label: 'HTTP' },
   { value: 'tcp', label: 'TCP' },
-  { value: 'none', label: 'Disabled' },
+  { value: 'none', label: 'Desativado' },
 ]
 
 const createInitialForm = (): RouteForm => ({
@@ -139,7 +140,7 @@ export default function ReverseProxyPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
       queryClient.invalidateQueries({ queryKey: ['proxy-config-preview'] })
-      toast({ title: 'Route created — applying configuration...' })
+      toast({ title: 'Rota criada — aplicando configuração...' })
       setIsAddModalOpen(false)
       setFormData(createInitialForm())
       // Auto-apply config after create
@@ -148,7 +149,7 @@ export default function ReverseProxyPage() {
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to create route',
+        title: 'Falha ao criar rota',
         description: getErrorMessage(error),
       })
     },
@@ -160,7 +161,7 @@ export default function ReverseProxyPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
       queryClient.invalidateQueries({ queryKey: ['proxy-config-preview'] })
-      toast({ title: 'Route updated — applying configuration...' })
+      toast({ title: 'Rota atualizada — aplicando configuração...' })
       setIsEditModalOpen(false)
       setEditingRoute(null)
       // Auto-apply config after update
@@ -169,7 +170,7 @@ export default function ReverseProxyPage() {
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to update route',
+        title: 'Falha ao atualizar rota',
         description: getErrorMessage(error),
       })
     },
@@ -180,12 +181,12 @@ export default function ReverseProxyPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
       queryClient.invalidateQueries({ queryKey: ['proxy-config-preview'] })
-      toast({ title: 'Route deleted — applying configuration...' })
+      toast({ title: 'Rota excluída — aplicando configuração...' })
       // Auto-apply config after delete
       applyMutation.mutate()
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to delete route' })
+      toast({ variant: 'destructive', title: 'Falha ao excluir rota' })
     },
   })
 
@@ -194,12 +195,12 @@ export default function ReverseProxyPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
       queryClient.invalidateQueries({ queryKey: ['traefik-status'] })
-      toast({ title: 'Configuration applied successfully' })
+      toast({ title: 'Configuração aplicada com sucesso' })
     },
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to apply configuration',
+        title: 'Falha ao aplicar configuração',
         description: getErrorMessage(error),
       })
     },
@@ -209,10 +210,10 @@ export default function ReverseProxyPage() {
     mutationFn: () => proxyApi.healthCheckAll(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
-      toast({ title: 'Health check completed' })
+      toast({ title: 'Verificação de saúde concluída' })
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Health check failed' })
+      toast({ variant: 'destructive', title: 'Falha na verificação de saúde' })
     },
   })
 
@@ -220,10 +221,10 @@ export default function ReverseProxyPage() {
     mutationFn: (id: string) => proxyApi.healthCheck(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
-      toast({ title: 'Health check completed' })
+      toast({ title: 'Verificação de saúde concluída' })
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Health check failed' })
+      toast({ variant: 'destructive', title: 'Falha na verificação de saúde' })
     },
   })
 
@@ -231,8 +232,8 @@ export default function ReverseProxyPage() {
     mutationFn: (domain: string) => proxyApi.renewCertificate(domain),
     onSuccess: (res) => {
       toast({
-        title: 'Certificate renewal triggered',
-        description: res.data?.message || 'Traefik is re-issuing the certificate. It may take up to 30s to appear.',
+        title: 'Renovação de certificado iniciada',
+        description: res.data?.message || 'O Traefik está reemitindo o certificado. Pode levar até 30s para aparecer.',
       })
       // Delay refetch to give Traefik time to re-issue
       setTimeout(() => {
@@ -246,7 +247,7 @@ export default function ReverseProxyPage() {
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to renew certificate',
+        title: 'Falha ao renovar certificado',
         description: getErrorMessage(error),
       })
     },
@@ -256,12 +257,12 @@ export default function ReverseProxyPage() {
     mutationFn: (domain: string) => proxyApi.deleteCertificate(domain),
     onSuccess: (_, domain) => {
       queryClient.invalidateQueries({ queryKey: ['proxy-certificates'] })
-      toast({ title: `Certificate for ${domain} deleted` })
+      toast({ title: `Certificado de ${domain} excluído` })
     },
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to delete certificate',
+        title: 'Falha ao excluir certificado',
         description: getErrorMessage(error),
       })
     },
@@ -277,7 +278,7 @@ export default function ReverseProxyPage() {
     onError: (error: Error & { response?: { data?: { detail?: string; message?: string; details?: Array<{ msg?: string }> } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to request DNS challenge',
+        title: 'Falha ao solicitar desafio DNS',
         description: getErrorMessage(error),
       })
     },
@@ -290,7 +291,7 @@ export default function ReverseProxyPage() {
       if (res.data.success) {
         queryClient.invalidateQueries({ queryKey: ['proxy-routes'] })
         queryClient.invalidateQueries({ queryKey: ['proxy-certificates'] })
-        toast({ title: 'Certificate issued successfully!' })
+        toast({ title: 'Certificado emitido com sucesso!' })
       }
       setIsVerifying(false)
     },
@@ -318,7 +319,7 @@ export default function ReverseProxyPage() {
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text)
-    toast({ title: `${label} copied to clipboard` })
+    toast({ title: `${label} copiado para a área de transferência` })
   }
 
   const routes: ProxyRoute[] = routesData?.items || []
@@ -352,7 +353,7 @@ export default function ReverseProxyPage() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name.trim() || !formData.hostname.trim() || !formData.backend_url.trim()) {
-      toast({ variant: 'destructive', title: 'Name, hostname, and backend URL are required' })
+      toast({ variant: 'destructive', title: 'Nome, hostname e URL do backend são obrigatórios' })
       return
     }
     createMutation.mutate(formToPayload(formData))
@@ -406,26 +407,26 @@ export default function ReverseProxyPage() {
     switch (status) {
       case 'active':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-green-500/20 text-green-500">
-            <CheckCircle2 className="h-3 w-3" /> Active
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-success/20 text-success">
+            <CheckCircle2 className="h-3 w-3" /> Ativo
           </span>
         )
       case 'error':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-red-500/20 text-red-500">
-            <XCircle className="h-3 w-3" /> Error
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-destructive/20 text-destructive">
+            <XCircle className="h-3 w-3" /> Erro
           </span>
         )
       case 'pending':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-yellow-500/20 text-yellow-500">
-            <AlertCircle className="h-3 w-3" /> Pending
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-warning/20 text-warning">
+            <AlertCircle className="h-3 w-3" /> Pendente
           </span>
         )
       default:
         return (
           <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-muted text-muted-foreground">
-            <AlertCircle className="h-3 w-3" /> Inactive
+            <AlertCircle className="h-3 w-3" /> Inativo
           </span>
         )
     }
@@ -433,18 +434,18 @@ export default function ReverseProxyPage() {
 
   const getHealthBadge = (route: ProxyRoute) => {
     if (route.last_health_status === null || route.last_health_status === undefined) {
-      return <span className="text-xs text-muted-foreground">Not checked</span>
+      return <span className="text-xs text-muted-foreground">Não verificado</span>
     }
     if (route.last_health_status) {
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-green-500">
-          <CheckCircle2 className="h-3 w-3" /> Healthy
+        <span className="inline-flex items-center gap-1 text-xs text-success">
+          <CheckCircle2 className="h-3 w-3" /> Saudável
         </span>
       )
     }
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-red-500" title={route.last_error || ''}>
-        <XCircle className="h-3 w-3" /> Unhealthy
+      <span className="inline-flex items-center gap-1 text-xs text-destructive" title={route.last_error || ''}>
+        <XCircle className="h-3 w-3" /> Não saudável
       </span>
     )
   }
@@ -453,10 +454,10 @@ export default function ReverseProxyPage() {
     <div className="space-y-6 mt-4">
       {/* Basic Info */}
       <div className="space-y-4">
-        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Route Details</h3>
+        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Detalhes da Rota</h3>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor={`${prefix}-name`}>Route Name *</Label>
+            <Label htmlFor={`${prefix}-name`}>Nome da Rota *</Label>
             <Input
               id={`${prefix}-name`}
               value={formData.name}
@@ -475,14 +476,14 @@ export default function ReverseProxyPage() {
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor={`${prefix}-backend_url`}>Backend URL *</Label>
+          <Label htmlFor={`${prefix}-backend_url`}>URL do Backend *</Label>
           <Input
             id={`${prefix}-backend_url`}
             value={formData.backend_url}
             onChange={(e) => updateField('backend_url', e.target.value)}
             placeholder="http://10.0.1.5:8080"
           />
-          <p className="text-xs text-muted-foreground">URL of the backend service (private EC2, internal service, etc.)</p>
+          <p className="text-xs text-muted-foreground">URL do serviço de backend (EC2 privado, serviço interno, etc.)</p>
         </div>
       </div>
 
@@ -491,7 +492,7 @@ export default function ReverseProxyPage() {
         <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">SSL / TLS</h3>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor={`${prefix}-ssl_mode`}>SSL Mode</Label>
+            <Label htmlFor={`${prefix}-ssl_mode`}>Modo SSL</Label>
             <Select
               id={`${prefix}-ssl_mode`}
               value={formData.ssl_mode}
@@ -507,7 +508,7 @@ export default function ReverseProxyPage() {
                 onChange={(e) => updateField('force_https', e.target.checked)}
                 className="rounded"
               />
-              <span className="text-sm">Force HTTPS redirect</span>
+              <span className="text-sm">Forçar redirecionamento HTTPS</span>
             </label>
           </div>
         </div>
@@ -515,10 +516,10 @@ export default function ReverseProxyPage() {
 
       {/* Health Check */}
       <div className="space-y-4">
-        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Health Check</h3>
+        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Verificação de Saúde</h3>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor={`${prefix}-health_check_type`}>Type</Label>
+            <Label htmlFor={`${prefix}-health_check_type`}>Tipo</Label>
             <Select
               id={`${prefix}-health_check_type`}
               value={formData.health_check_type}
@@ -527,7 +528,7 @@ export default function ReverseProxyPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor={`${prefix}-health_check_path`}>Path</Label>
+            <Label htmlFor={`${prefix}-health_check_path`}>Caminho</Label>
             <Input
               id={`${prefix}-health_check_path`}
               value={formData.health_check_path}
@@ -536,7 +537,7 @@ export default function ReverseProxyPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor={`${prefix}-health_check_interval`}>Interval</Label>
+            <Label htmlFor={`${prefix}-health_check_interval`}>Intervalo</Label>
             <Input
               id={`${prefix}-health_check_interval`}
               value={formData.health_check_interval}
@@ -549,10 +550,10 @@ export default function ReverseProxyPage() {
 
       {/* Rate Limiting */}
       <div className="space-y-4">
-        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Rate Limiting (Optional)</h3>
+        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Limitação de Taxa (Opcional)</h3>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor={`${prefix}-rate_limit_average`}>Average (req/s)</Label>
+            <Label htmlFor={`${prefix}-rate_limit_average`}>Média (req/s)</Label>
             <Input
               id={`${prefix}-rate_limit_average`}
               type="number"
@@ -562,7 +563,7 @@ export default function ReverseProxyPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor={`${prefix}-rate_limit_burst`}>Burst</Label>
+            <Label htmlFor={`${prefix}-rate_limit_burst`}>Pico</Label>
             <Input
               id={`${prefix}-rate_limit_burst`}
               type="number"
@@ -576,7 +577,7 @@ export default function ReverseProxyPage() {
 
       {/* Options */}
       <div className="space-y-4">
-        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Options</h3>
+        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Opções</h3>
         <div className="flex items-center gap-6">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -585,7 +586,7 @@ export default function ReverseProxyPage() {
               onChange={(e) => updateField('pass_host_header', e.target.checked)}
               className="rounded"
             />
-            <span className="text-sm">Pass Host header</span>
+            <span className="text-sm">Repassar cabeçalho Host</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -594,7 +595,7 @@ export default function ReverseProxyPage() {
               onChange={(e) => updateField('is_enabled', e.target.checked)}
               className="rounded"
             />
-            <span className="text-sm">Enabled</span>
+            <span className="text-sm">Ativado</span>
           </label>
         </div>
       </div>
@@ -603,30 +604,30 @@ export default function ReverseProxyPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Proxy Reverso</h1>
-          <p className="text-muted-foreground">Gerenciar rotas de proxy reverso via Traefik</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setIsConfigPreviewOpen(true)}>
-            <Eye className="h-4 w-4 mr-2" />
-            Preview Config
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => applyMutation.mutate()}
-            disabled={applyMutation.isPending}
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Apply Config
-          </Button>
-          <Button onClick={openAddModal}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Route
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Proxy Reverso"
+        subtitle="Rotas, domínios e certificados"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setIsConfigPreviewOpen(true)}>
+              <Eye className="h-4 w-4 mr-2" />
+              Visualizar Configuração
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => applyMutation.mutate()}
+              disabled={applyMutation.isPending}
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Aplicar Configuração
+            </Button>
+            <Button onClick={openAddModal}>
+              <Plus className="h-4 w-4 mr-2" />
+              Adicionar Rota
+            </Button>
+          </>
+        }
+      />
 
       {/* Traefik Status Card */}
       <Card>
@@ -639,14 +640,14 @@ export default function ReverseProxyPage() {
             <div className="flex items-center gap-2">
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
                 traefikStatus?.running
-                  ? 'bg-green-500/20 text-green-500'
-                  : 'bg-red-500/20 text-red-500'
+                  ? 'bg-success/20 text-success'
+                  : 'bg-destructive/20 text-destructive'
               }`}>
-                <span className={`h-2 w-2 rounded-full ${traefikStatus?.running ? 'bg-green-500' : 'bg-red-500'}`} />
-                {traefikStatus?.running ? 'Running' : 'Stopped'}
+                <span className={`h-2 w-2 rounded-full ${traefikStatus?.running ? 'bg-success' : 'bg-destructive'}`} />
+                {traefikStatus?.running ? 'Em execução' : 'Parado'}
               </span>
               <span className="text-sm text-muted-foreground">
-                {routes.length} route{routes.length !== 1 ? 's' : ''}
+                {routes.length} rota{routes.length !== 1 ? 's' : ''}
               </span>
               <Button
                 variant="outline"
@@ -655,7 +656,7 @@ export default function ReverseProxyPage() {
                 disabled={healthCheckMutation.isPending}
               >
                 <Heart className={`h-4 w-4 mr-1 ${healthCheckMutation.isPending ? 'animate-pulse' : ''}`} />
-                Health Check
+                Verificar Saúde
               </Button>
               <Button variant="ghost" size="sm" onClick={() => refetchStatus()}>
                 <RefreshCw className="h-4 w-4" />
@@ -670,10 +671,10 @@ export default function ReverseProxyPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" />
-            Proxy Routes
+            Rotas de Proxy
           </CardTitle>
           <CardDescription>
-            {routes.length} route{routes.length !== 1 ? 's' : ''} configured
+            {routes.length} rota{routes.length !== 1 ? 's' : ''} configurada{routes.length !== 1 ? 's' : ''}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -684,10 +685,10 @@ export default function ReverseProxyPage() {
           ) : routes.length === 0 ? (
             <div className="text-center py-8">
               <Globe className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">No proxy routes configured</p>
+              <p className="text-muted-foreground mb-4">Nenhuma rota de proxy configurada</p>
               <Button onClick={openAddModal}>
                 <Plus className="h-4 w-4 mr-2" />
-                Add Your First Route
+                Adicionar Sua Primeira Rota
               </Button>
             </div>
           ) : (
@@ -695,13 +696,13 @@ export default function ReverseProxyPage() {
               <table className="w-full text-sm">
                 <thead className="text-xs uppercase text-muted-foreground border-b">
                   <tr>
-                    <th className="px-4 py-3 text-left">Name</th>
+                    <th className="px-4 py-3 text-left">Nome</th>
                     <th className="px-4 py-3 text-left">Hostname</th>
-                    <th className="px-4 py-3 text-left">Backend URL</th>
+                    <th className="px-4 py-3 text-left">URL do Backend</th>
                     <th className="px-4 py-3 text-left">SSL</th>
-                    <th className="px-4 py-3 text-left">Health</th>
+                    <th className="px-4 py-3 text-left">Saúde</th>
                     <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -725,10 +726,10 @@ export default function ReverseProxyPage() {
                             onClick={() => handleToggleEnabled(route)}
                             disabled={updateMutation.isPending}
                             className="p-1 rounded hover:bg-muted"
-                            title={route.is_enabled ? 'Disable' : 'Enable'}
+                            title={route.is_enabled ? 'Desativar' : 'Ativar'}
                           >
                             {route.is_enabled ? (
-                              <Shield className="h-3.5 w-3.5 text-green-500" />
+                              <Shield className="h-3.5 w-3.5 text-success" />
                             ) : (
                               <ShieldOff className="h-3.5 w-3.5 text-muted-foreground" />
                             )}
@@ -742,7 +743,7 @@ export default function ReverseProxyPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleRequestDns(route)}
-                              title="Request DNS-01 Certificate"
+                              title="Solicitar Certificado DNS-01"
                             >
                               <FileKey className="h-4 w-4" />
                             </Button>
@@ -752,11 +753,11 @@ export default function ReverseProxyPage() {
                             size="sm"
                             onClick={() => singleHealthCheckMutation.mutate(route.id)}
                             disabled={singleHealthCheckMutation.isPending}
-                            title="Health check"
+                            title="Verificar saúde"
                           >
                             <Heart className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => openEditModal(route)} title="Edit route">
+                          <Button variant="ghost" size="sm" onClick={() => openEditModal(route)} title="Editar rota">
                             <Pencil className="h-4 w-4" />
                           </Button>
                           <Button
@@ -765,7 +766,7 @@ export default function ReverseProxyPage() {
                             onClick={() => deleteMutation.mutate(route.id)}
                             disabled={deleteMutation.isPending}
                             className="text-destructive hover:text-destructive"
-                            title="Delete route"
+                            title="Excluir rota"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -786,7 +787,7 @@ export default function ReverseProxyPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Lock className="h-5 w-5" />
-              SSL Certificates
+              Certificados SSL
             </CardTitle>
             <Button variant="ghost" size="sm" onClick={() => refetchCerts()}>
               <RefreshCw className="h-4 w-4" />
@@ -794,17 +795,17 @@ export default function ReverseProxyPage() {
           </div>
           <CardDescription>
             {certsData?.acme_email && (
-              <span>ACME account: {certsData.acme_email} &middot; </span>
+              <span>Conta ACME: {certsData.acme_email} &middot; </span>
             )}
-            {certsData?.total || 0} certificate{(certsData?.total || 0) !== 1 ? 's' : ''}
+            {certsData?.total || 0} certificado{(certsData?.total || 0) !== 1 ? 's' : ''}
             {(certsData?.valid || 0) > 0 && (
-              <span className="text-green-500 ml-2">{certsData?.valid} valid</span>
+              <span className="text-success ml-2">{certsData?.valid} válido{(certsData?.valid || 0) !== 1 ? 's' : ''}</span>
             )}
             {(certsData?.expiring || 0) > 0 && (
-              <span className="text-yellow-500 ml-2">{certsData?.expiring} expiring</span>
+              <span className="text-warning ml-2">{certsData?.expiring} expirando</span>
             )}
             {(certsData?.expired || 0) > 0 && (
-              <span className="text-red-500 ml-2">{certsData?.expired} expired</span>
+              <span className="text-destructive ml-2">{certsData?.expired} expirado{(certsData?.expired || 0) !== 1 ? 's' : ''}</span>
             )}
           </CardDescription>
         </CardHeader>
@@ -813,7 +814,7 @@ export default function ReverseProxyPage() {
             <div className="text-center py-6">
               <Lock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground text-sm">
-                No certificates yet. Certificates are automatically issued when you create routes with SSL enabled and apply the configuration.
+                Nenhum certificado ainda. Os certificados são emitidos automaticamente quando você cria rotas com SSL ativado e aplica a configuração.
               </p>
             </div>
           ) : (
@@ -821,12 +822,12 @@ export default function ReverseProxyPage() {
               <table className="w-full text-sm">
                 <thead className="text-xs uppercase text-muted-foreground border-b">
                   <tr>
-                    <th className="px-4 py-3 text-left">Domain</th>
-                    <th className="px-4 py-3 text-left">Issuer</th>
-                    <th className="px-4 py-3 text-left">Expires</th>
-                    <th className="px-4 py-3 text-left">Remaining</th>
+                    <th className="px-4 py-3 text-left">Domínio</th>
+                    <th className="px-4 py-3 text-left">Emissor</th>
+                    <th className="px-4 py-3 text-left">Expira em</th>
+                    <th className="px-4 py-3 text-left">Restante</th>
                     <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -850,13 +851,13 @@ export default function ReverseProxyPage() {
                         {cert.days_remaining !== null && cert.days_remaining !== undefined ? (
                           <span className={`text-xs font-medium ${
                             cert.days_remaining < 0
-                              ? 'text-red-500'
+                              ? 'text-destructive'
                               : cert.days_remaining < 14
-                              ? 'text-yellow-500'
-                              : 'text-green-500'
+                              ? 'text-warning'
+                              : 'text-success'
                           }`}>
                             {cert.days_remaining < 0
-                              ? `Expired ${Math.abs(cert.days_remaining)}d ago`
+                              ? `Expirado há ${Math.abs(cert.days_remaining)}d`
                               : `${cert.days_remaining}d`}
                           </span>
                         ) : (
@@ -865,23 +866,23 @@ export default function ReverseProxyPage() {
                       </td>
                       <td className="px-4 py-3">
                         {cert.status === 'valid' && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-green-500/20 text-green-500">
-                            <CheckCircle2 className="h-3 w-3" /> Valid
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-success/20 text-success">
+                            <CheckCircle2 className="h-3 w-3" /> Válido
                           </span>
                         )}
                         {cert.status === 'expiring' && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-yellow-500/20 text-yellow-500">
-                            <AlertCircle className="h-3 w-3" /> Expiring
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-warning/20 text-warning">
+                            <AlertCircle className="h-3 w-3" /> Expirando
                           </span>
                         )}
                         {cert.status === 'expired' && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-red-500/20 text-red-500">
-                            <XCircle className="h-3 w-3" /> Expired
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-destructive/20 text-destructive">
+                            <XCircle className="h-3 w-3" /> Expirado
                           </span>
                         )}
                         {cert.status === 'error' && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-red-500/20 text-red-500">
-                            <XCircle className="h-3 w-3" /> Error
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-destructive/20 text-destructive">
+                            <XCircle className="h-3 w-3" /> Erro
                           </span>
                         )}
                       </td>
@@ -892,7 +893,7 @@ export default function ReverseProxyPage() {
                             size="sm"
                             onClick={() => renewCertMutation.mutate(cert.domain)}
                             disabled={renewCertMutation.isPending}
-                            title={`Force renewal for ${cert.domain}`}
+                            title={`Forçar renovação de ${cert.domain}`}
                           >
                             <RotateCcw className="h-4 w-4" />
                           </Button>
@@ -900,13 +901,13 @@ export default function ReverseProxyPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              if (confirm(`Delete certificate for ${cert.domain}?`)) {
+                              if (confirm(`Excluir certificado de ${cert.domain}?`)) {
                                 deleteCertMutation.mutate(cert.domain)
                               }
                             }}
                             disabled={deleteCertMutation.isPending}
                             className="text-destructive hover:text-destructive"
-                            title={`Delete certificate for ${cert.domain}`}
+                            title={`Excluir certificado de ${cert.domain}`}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -926,15 +927,15 @@ export default function ReverseProxyPage() {
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
         <DialogContent onClose={() => setIsAddModalOpen(false)} className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add Proxy Route</DialogTitle>
-            <DialogDescription>Configure a new reverse proxy route for an external service</DialogDescription>
+            <DialogTitle>Adicionar Rota de Proxy</DialogTitle>
+            <DialogDescription>Configure uma nova rota de proxy reverso para um serviço externo</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate}>
             {renderFormFields("add")}
             <DialogFooter className="mt-6">
-              <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancelar</Button>
               <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? 'Creating...' : 'Create Route'}
+                {createMutation.isPending ? 'Criando...' : 'Criar Rota'}
               </Button>
             </DialogFooter>
           </form>
@@ -945,15 +946,15 @@ export default function ReverseProxyPage() {
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent onClose={() => setIsEditModalOpen(false)} className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Proxy Route</DialogTitle>
-            <DialogDescription>Modify the proxy route configuration</DialogDescription>
+            <DialogTitle>Editar Rota de Proxy</DialogTitle>
+            <DialogDescription>Modifique a configuração da rota de proxy</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEdit}>
             {renderFormFields("edit")}
             <DialogFooter className="mt-6">
-              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancelar</Button>
               <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+                {updateMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
               </Button>
             </DialogFooter>
           </form>
@@ -966,11 +967,11 @@ export default function ReverseProxyPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileKey className="h-5 w-5" />
-              DNS-01 Certificate Challenge
+              Desafio de Certificado DNS-01
             </DialogTitle>
             <DialogDescription>
               {dnsRouteContext?.hostname && (
-                <span>Request a Let's Encrypt certificate for <strong className="font-mono">{dnsRouteContext.hostname}</strong></span>
+                <span>Solicitar um certificado Let's Encrypt para <strong className="font-mono">{dnsRouteContext.hostname}</strong></span>
               )}
             </DialogDescription>
           </DialogHeader>
@@ -979,17 +980,17 @@ export default function ReverseProxyPage() {
             {requestDnsMutation.isPending && (
               <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Requesting challenge from Let's Encrypt...</span>
+                <span>Solicitando desafio ao Let's Encrypt...</span>
               </div>
             )}
 
             {dnsChallenge && (
               <>
                 <div className="rounded-lg bg-muted p-4 space-y-4">
-                  <p className="text-sm font-medium">Add the following TXT record to your DNS:</p>
+                  <p className="text-sm font-medium">Adicione o seguinte registro TXT ao seu DNS:</p>
 
                   <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">TXT Record Name</Label>
+                    <Label className="text-xs text-muted-foreground">Nome do Registro TXT</Label>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 px-3 py-2 bg-background rounded text-sm font-mono break-all">
                         {dnsChallenge.txt_record_name}
@@ -997,7 +998,7 @@ export default function ReverseProxyPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => copyToClipboard(dnsChallenge.txt_record_name || '', 'TXT record name')}
+                        onClick={() => copyToClipboard(dnsChallenge.txt_record_name || '', 'Nome do registro TXT')}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
@@ -1005,7 +1006,7 @@ export default function ReverseProxyPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">TXT Record Value</Label>
+                    <Label className="text-xs text-muted-foreground">Valor do Registro TXT</Label>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 px-3 py-2 bg-background rounded text-sm font-mono break-all">
                         {dnsChallenge.txt_record_value}
@@ -1013,7 +1014,7 @@ export default function ReverseProxyPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => copyToClipboard(dnsChallenge.txt_record_value || '', 'TXT record value')}
+                        onClick={() => copyToClipboard(dnsChallenge.txt_record_value || '', 'Valor do registro TXT')}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
@@ -1022,16 +1023,16 @@ export default function ReverseProxyPage() {
                 </div>
 
                 <div className="rounded-lg border p-4 space-y-2">
-                  <p className="text-sm font-medium">Steps:</p>
+                  <p className="text-sm font-medium">Passos:</p>
                   <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-                    <li>Go to your DNS provider's control panel</li>
-                    <li>Add a TXT record with the name and value above</li>
-                    <li>Wait for DNS propagation (may take a few minutes)</li>
-                    <li>Click "Verify & Issue" below</li>
+                    <li>Acesse o painel de controle do seu provedor de DNS</li>
+                    <li>Adicione um registro TXT com o nome e o valor acima</li>
+                    <li>Aguarde a propagação do DNS (pode levar alguns minutos)</li>
+                    <li>Clique em "Verificar e Emitir" abaixo</li>
                   </ol>
                   <div className="mt-3 pt-3 border-t">
                     <p className="text-xs text-muted-foreground">
-                      To check propagation, run:{' '}
+                      Para verificar a propagação, execute:{' '}
                       <code className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">
                         dig TXT {dnsChallenge.txt_record_name}
                       </code>
@@ -1042,8 +1043,8 @@ export default function ReverseProxyPage() {
                 {verifyResult && (
                   <div className={`rounded-lg p-3 text-sm ${
                     verifyResult.success
-                      ? 'bg-green-500/10 text-green-500 border border-green-500/20'
-                      : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                      ? 'bg-success/10 text-success border border-success/20'
+                      : 'bg-destructive/10 text-destructive border border-destructive/20'
                   }`}>
                     <div className="flex items-center gap-2">
                       {verifyResult.success ? (
@@ -1061,7 +1062,7 @@ export default function ReverseProxyPage() {
 
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setIsDnsDialogOpen(false)}>
-              {verifyResult?.success ? 'Done' : 'Cancel'}
+              {verifyResult?.success ? 'Concluído' : 'Cancelar'}
             </Button>
             {dnsChallenge && !verifyResult?.success && (
               <Button
@@ -1071,10 +1072,10 @@ export default function ReverseProxyPage() {
                 {isVerifying ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Verifying...
+                    Verificando...
                   </>
                 ) : (
-                  'Verify & Issue Certificate'
+                  'Verificar e Emitir Certificado'
                 )}
               </Button>
             )}
@@ -1086,18 +1087,18 @@ export default function ReverseProxyPage() {
       <Dialog open={isConfigPreviewOpen} onOpenChange={setIsConfigPreviewOpen}>
         <DialogContent onClose={() => setIsConfigPreviewOpen(false)} className="max-w-3xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Configuration Preview</DialogTitle>
-            <DialogDescription>Preview of generated Traefik dynamic YAML (routes.yml)</DialogDescription>
+            <DialogTitle>Visualização da Configuração</DialogTitle>
+            <DialogDescription>Visualização do YAML dinâmico gerado do Traefik (routes.yml)</DialogDescription>
           </DialogHeader>
           <div className="mt-4">
             <pre className="p-4 bg-muted rounded-lg text-xs overflow-auto max-h-[60vh] font-mono">
-              {configPreview?.yaml_config || 'Loading...'}
+              {configPreview?.yaml_config || 'Carregando...'}
             </pre>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsConfigPreviewOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setIsConfigPreviewOpen(false)}>Fechar</Button>
             <Button onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending}>
-              {applyMutation.isPending ? 'Applying...' : 'Apply Configuration'}
+              {applyMutation.isPending ? 'Aplicando...' : 'Aplicar Configuração'}
             </Button>
           </DialogFooter>
         </DialogContent>

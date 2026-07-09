@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
+import { PageHeader } from '@/components/PageHeader'
 import {
   Shield,
   ShieldOff,
@@ -60,29 +61,29 @@ interface ServerInfo {
 }
 
 const IKE_VERSION_OPTIONS = [
-  { value: 'ikev2', label: 'IKEv2 (Recommended)' },
-  { value: 'ikev1', label: 'IKEv1 (Legacy)' },
+  { value: 'ikev2', label: 'IKEv2 (Recomendado)' },
+  { value: 'ikev1', label: 'IKEv1 (Legado)' },
 ]
 
 const DPD_ACTION_OPTIONS = [
-  { value: 'restart', label: 'Restart - Reconnect on failure' },
-  { value: 'clear', label: 'Clear - Remove SA on failure' },
-  { value: 'hold', label: 'Hold - Keep trying' },
-  { value: 'none', label: 'None - Disable DPD' },
+  { value: 'restart', label: 'Restart - Reconectar em caso de falha' },
+  { value: 'clear', label: 'Clear - Remover SA em caso de falha' },
+  { value: 'hold', label: 'Hold - Continuar tentando' },
+  { value: 'none', label: 'None - Desabilitar DPD' },
 ]
 
 const IKE_CIPHER_PRESETS = [
-  { value: 'aes256-sha256-modp2048', label: 'AES-256 SHA-256 DH-2048 (Recommended)' },
-  { value: 'aes256-sha256-modp4096', label: 'AES-256 SHA-256 DH-4096 (Strong)' },
-  { value: 'aes128-sha256-modp2048', label: 'AES-128 SHA-256 DH-2048 (Fast)' },
-  { value: 'aes256-sha512-modp4096', label: 'AES-256 SHA-512 DH-4096 (Very Strong)' },
+  { value: 'aes256-sha256-modp2048', label: 'AES-256 SHA-256 DH-2048 (Recomendado)' },
+  { value: 'aes256-sha256-modp4096', label: 'AES-256 SHA-256 DH-4096 (Forte)' },
+  { value: 'aes128-sha256-modp2048', label: 'AES-128 SHA-256 DH-2048 (Rápido)' },
+  { value: 'aes256-sha512-modp4096', label: 'AES-256 SHA-512 DH-4096 (Muito Forte)' },
 ]
 
 const ESP_CIPHER_PRESETS = [
-  { value: 'aes256-sha256', label: 'AES-256 SHA-256 (Recommended - No PFS)' },
-  { value: 'aes256-sha256-modp2048', label: 'AES-256 SHA-256 DH-2048 (With PFS)' },
-  { value: 'aes128-sha256', label: 'AES-128 SHA-256 (Fast - No PFS)' },
-  { value: 'aes256-sha1', label: 'AES-256 SHA-1 (Legacy Compatible)' },
+  { value: 'aes256-sha256', label: 'AES-256 SHA-256 (Recomendado - Sem PFS)' },
+  { value: 'aes256-sha256-modp2048', label: 'AES-256 SHA-256 DH-2048 (Com PFS)' },
+  { value: 'aes128-sha256', label: 'AES-128 SHA-256 (Rápido - Sem PFS)' },
+  { value: 'aes256-sha1', label: 'AES-256 SHA-1 (Compatível com Legado)' },
 ]
 
 const createInitialForm = (serverInfo?: ServerInfo): ConnectionForm => ({
@@ -169,15 +170,15 @@ export default function IPsecPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
       queryClient.invalidateQueries({ queryKey: ['ipsec-config-preview'] })
-      toast({ title: 'Connection created successfully' })
+      toast({ title: 'Conexão criada com sucesso' })
       setIsAddModalOpen(false)
       setFormData(createInitialForm(serverInfo || undefined))
     },
     onError: (error: Error & { response?: { data?: { detail?: string } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to create connection',
-        description: error.response?.data?.detail || 'Unknown error',
+        title: 'Falha ao criar conexão',
+        description: error.response?.data?.detail || 'Erro desconhecido',
       })
     },
   })
@@ -188,15 +189,15 @@ export default function IPsecPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
       queryClient.invalidateQueries({ queryKey: ['ipsec-config-preview'] })
-      toast({ title: 'Connection updated' })
+      toast({ title: 'Conexão atualizada' })
       setIsEditModalOpen(false)
       setEditingConnection(null)
     },
     onError: (error: Error & { response?: { data?: { detail?: string } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to update connection',
-        description: error.response?.data?.detail || 'Unknown error',
+        title: 'Falha ao atualizar conexão',
+        description: error.response?.data?.detail || 'Erro desconhecido',
       })
     },
   })
@@ -206,10 +207,10 @@ export default function IPsecPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
       queryClient.invalidateQueries({ queryKey: ['ipsec-config-preview'] })
-      toast({ title: 'Connection deleted' })
+      toast({ title: 'Conexão excluída' })
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to delete connection' })
+      toast({ variant: 'destructive', title: 'Falha ao excluir conexão' })
     },
   })
 
@@ -218,23 +219,23 @@ export default function IPsecPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
       queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
-      toast({ title: 'Tunnel started' })
+      toast({ title: 'Túnel iniciado' })
     },
     onError: (error: Error & { response?: { data?: { detail?: string | { error?: string; suggestion?: string; error_type?: string } } } }) => {
       const detail = error.response?.data?.detail
-      let errorMsg = 'Unknown error'
+      let errorMsg = 'Erro desconhecido'
       let suggestion = ''
 
       if (typeof detail === 'string') {
         errorMsg = detail
       } else if (detail && typeof detail === 'object') {
-        errorMsg = detail.error || 'Unknown error'
+        errorMsg = detail.error || 'Erro desconhecido'
         suggestion = detail.suggestion || ''
       }
 
       toast({
         variant: 'destructive',
-        title: 'Failed to start tunnel',
+        title: 'Falha ao iniciar túnel',
         description: (
           <div className="space-y-1">
             <p>{errorMsg}</p>
@@ -250,10 +251,10 @@ export default function IPsecPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
       queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
-      toast({ title: 'Tunnel stopped' })
+      toast({ title: 'Túnel parado' })
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to stop tunnel' })
+      toast({ variant: 'destructive', title: 'Falha ao parar túnel' })
     },
   })
 
@@ -262,10 +263,10 @@ export default function IPsecPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
       queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
-      toast({ title: 'Tunnel restarted' })
+      toast({ title: 'Túnel reiniciado' })
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to restart tunnel' })
+      toast({ variant: 'destructive', title: 'Falha ao reiniciar túnel' })
     },
   })
 
@@ -274,13 +275,13 @@ export default function IPsecPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
       queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
-      toast({ title: 'Configuration applied successfully' })
+      toast({ title: 'Configuração aplicada com sucesso' })
     },
     onError: (error: Error & { response?: { data?: { detail?: string } } }) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to apply configuration',
-        description: error.response?.data?.detail || 'Unknown error',
+        title: 'Falha ao aplicar configuração',
+        description: error.response?.data?.detail || 'Erro desconhecido',
       })
     },
   })
@@ -290,10 +291,10 @@ export default function IPsecPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
       queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
-      toast({ title: 'Status synchronized' })
+      toast({ title: 'Status sincronizado' })
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to sync status' })
+      toast({ variant: 'destructive', title: 'Falha ao sincronizar status' })
     },
   })
 
@@ -302,11 +303,11 @@ export default function IPsecPage() {
   const getStatusIcon = (connectionStatus: string) => {
     switch (connectionStatus) {
       case 'active':
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />
+        return <CheckCircle2 className="h-4 w-4 text-success" />
       case 'connecting':
-        return <Loader2 className="h-4 w-4 text-yellow-500 animate-spin" />
+        return <Loader2 className="h-4 w-4 text-warning animate-spin" />
       case 'error':
-        return <XCircle className="h-4 w-4 text-red-500" />
+        return <XCircle className="h-4 w-4 text-destructive" />
       default:
         return <AlertCircle className="h-4 w-4 text-muted-foreground" />
     }
@@ -315,11 +316,11 @@ export default function IPsecPage() {
   const getStatusColor = (connectionStatus: string) => {
     switch (connectionStatus) {
       case 'active':
-        return 'bg-green-500/20 text-green-500'
+        return 'bg-success/20 text-success'
       case 'connecting':
-        return 'bg-yellow-500/20 text-yellow-500'
+        return 'bg-warning/20 text-warning'
       case 'error':
-        return 'bg-red-500/20 text-red-500'
+        return 'bg-destructive/20 text-destructive'
       default:
         return 'bg-muted text-muted-foreground'
     }
@@ -328,11 +329,11 @@ export default function IPsecPage() {
   const handleCreateConnection = (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name.trim()) {
-      toast({ variant: 'destructive', title: 'Connection name is required' })
+      toast({ variant: 'destructive', title: 'O nome da conexão é obrigatório' })
       return
     }
     if (!formData.psk.trim()) {
-      toast({ variant: 'destructive', title: 'Pre-shared key is required' })
+      toast({ variant: 'destructive', title: 'A chave pré-compartilhada é obrigatória' })
       return
     }
     createMutation.mutate(formData as unknown as IPsecConnectionCreate)
@@ -343,7 +344,7 @@ export default function IPsecPage() {
     if (!editingConnection) return
 
     if (!formData.name.trim()) {
-      toast({ variant: 'destructive', title: 'Connection name is required' })
+      toast({ variant: 'destructive', title: 'O nome da conexão é obrigatório' })
       return
     }
 
@@ -432,30 +433,30 @@ export default function IPsecPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">IPsec Site-to-Site</h1>
-          <p className="text-muted-foreground">Manage StrongSwan IPsec VPN tunnels</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setIsConfigPreviewOpen(true)}>
-            <Eye className="h-4 w-4 mr-2" />
-            Preview Config
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => applyMutation.mutate()}
-            disabled={applyMutation.isPending}
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Apply Config
-          </Button>
-          <Button onClick={openAddModal}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Connection
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="IPsec"
+        subtitle="Túneis site-to-site (StrongSwan)"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setIsConfigPreviewOpen(true)}>
+              <Eye className="h-4 w-4 mr-2" />
+              Visualizar Configuração
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => applyMutation.mutate()}
+              disabled={applyMutation.isPending}
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Aplicar Configuração
+            </Button>
+            <Button onClick={openAddModal}>
+              <Plus className="h-4 w-4 mr-2" />
+              Adicionar Conexão
+            </Button>
+          </>
+        }
+      />
 
       {/* Status Card */}
       <Card>
@@ -463,7 +464,7 @@ export default function IPsecPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Network className="h-5 w-5" />
-              StrongSwan Status
+              Status do StrongSwan
             </CardTitle>
             <div className="flex items-center gap-2">
               <Button
@@ -480,7 +481,7 @@ export default function IPsecPage() {
                 onClick={openAllLogs}
               >
                 <FileText className="h-4 w-4 mr-1" />
-                All Logs
+                Todos os Logs
               </Button>
               <Button
                 variant="ghost"
@@ -489,7 +490,7 @@ export default function IPsecPage() {
                 disabled={syncStatusMutation.isPending}
               >
                 <RefreshCw className={`h-4 w-4 mr-1 ${syncStatusMutation.isPending ? 'animate-spin' : ''}`} />
-                Sync
+                Sincronizar
               </Button>
               <Button variant="ghost" size="sm" onClick={() => refetchStatus()}>
                 <RefreshCw className="h-4 w-4" />
@@ -501,24 +502,24 @@ export default function IPsecPage() {
           <div className="grid gap-4 md:grid-cols-5">
             <div>
               <p className="text-sm text-muted-foreground">StrongSwan</p>
-              <p className={status?.strongswan_running ? 'text-green-500 font-medium' : 'text-red-500'}>
-                {status?.strongswan_running ? 'Running' : 'Stopped'}
+              <p className={status?.strongswan_running ? 'text-success font-medium' : 'text-destructive'}>
+                {status?.strongswan_running ? 'Em execução' : 'Parado'}
               </p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Version</p>
-              <p className="font-medium">{versionInfo?.version || 'Unknown'}</p>
+              <p className="text-sm text-muted-foreground">Versão</p>
+              <p className="font-medium">{versionInfo?.version || 'Desconhecida'}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Connections</p>
+              <p className="text-sm text-muted-foreground">Total de Conexões</p>
               <p className="font-medium">{status?.total_connections || 0}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Active Tunnels</p>
-              <p className="font-medium text-green-500">{status?.active_tunnels || 0}</p>
+              <p className="text-sm text-muted-foreground">Túneis Ativos</p>
+              <p className="font-medium text-success">{status?.active_tunnels || 0}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Configured</p>
+              <p className="text-sm text-muted-foreground">Configurados</p>
               <p className="font-medium">{connections.length}</p>
             </div>
           </div>
@@ -530,10 +531,10 @@ export default function IPsecPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
-            IPsec Connections
+            Conexões IPsec
           </CardTitle>
           <CardDescription>
-            {connections.length} connection{connections.length !== 1 ? 's' : ''} configured
+            {connections.length} conex{connections.length !== 1 ? 'ões' : 'ão'} configurada{connections.length !== 1 ? 's' : ''}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -544,10 +545,10 @@ export default function IPsecPage() {
           ) : connections.length === 0 ? (
             <div className="text-center py-8">
               <Network className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">No IPsec connections configured</p>
+              <p className="text-muted-foreground mb-4">Nenhuma conexão IPsec configurada</p>
               <Button onClick={openAddModal}>
                 <Plus className="h-4 w-4 mr-2" />
-                Add Your First Connection
+                Adicionar sua Primeira Conexão
               </Button>
             </div>
           ) : (
@@ -555,13 +556,13 @@ export default function IPsecPage() {
               <table className="w-full text-sm">
                 <thead className="text-xs uppercase text-muted-foreground border-b">
                   <tr>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Remote Peer</th>
-                    <th className="px-4 py-3 text-left">Subnets</th>
+                    <th className="px-4 py-3 text-left">Nome</th>
+                    <th className="px-4 py-3 text-left">Peer Remoto</th>
+                    <th className="px-4 py-3 text-left">Sub-redes</th>
                     <th className="px-4 py-3 text-left">IKE</th>
                     <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Live Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3 text-left">Status ao Vivo</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -586,7 +587,7 @@ export default function IPsecPage() {
                         <td className="px-4 py-3 font-mono text-xs">
                           <div>
                             <p className="text-muted-foreground">Local: {conn.left_subnet}</p>
-                            <p className="text-muted-foreground">Remote: {conn.right_subnet}</p>
+                            <p className="text-muted-foreground">Remota: {conn.right_subnet}</p>
                           </div>
                         </td>
                         <td className="px-4 py-3 uppercase text-xs">{conn.ike_version}</td>
@@ -596,12 +597,12 @@ export default function IPsecPage() {
                             disabled={updateMutation.isPending}
                             className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors ${
                               conn.is_enabled
-                                ? 'bg-green-500/20 text-green-500 hover:bg-green-500/30'
+                                ? 'bg-success/20 text-success hover:bg-success/30'
                                 : 'bg-muted text-muted-foreground hover:bg-muted/80'
                             }`}
                           >
                             {conn.is_enabled ? <Shield className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
-                            {conn.is_enabled ? 'Enabled' : 'Disabled'}
+                            {conn.is_enabled ? 'Habilitada' : 'Desabilitada'}
                           </button>
                         </td>
                         <td className="px-4 py-3">
@@ -610,11 +611,11 @@ export default function IPsecPage() {
                               {/* Tunnel Status Badge */}
                               <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${
                                 liveStatus.tunnel_status === 'UP'
-                                  ? 'bg-green-500/20 text-green-500'
+                                  ? 'bg-success/20 text-success'
                                   : liveStatus.tunnel_status === 'IKE_ONLY'
-                                  ? 'bg-yellow-500/20 text-yellow-500'
+                                  ? 'bg-warning/20 text-warning'
                                   : liveStatus.tunnel_status === 'CONNECTING'
-                                  ? 'bg-blue-500/20 text-blue-500'
+                                  ? 'bg-primary/20 text-primary'
                                   : 'bg-muted text-muted-foreground'
                               }`}>
                                 {liveStatus.tunnel_status === 'UP' ? (
@@ -627,25 +628,25 @@ export default function IPsecPage() {
                                   <XCircle className="h-3 w-3" />
                                 )}
                                 <span>
-                                  {liveStatus.tunnel_status === 'UP' ? 'Tunnel UP'
-                                    : liveStatus.tunnel_status === 'IKE_ONLY' ? 'IKE Only'
-                                    : liveStatus.tunnel_status === 'CONNECTING' ? 'Connecting'
-                                    : 'Down'}
+                                  {liveStatus.tunnel_status === 'UP' ? 'Túnel ATIVO'
+                                    : liveStatus.tunnel_status === 'IKE_ONLY' ? 'Apenas IKE'
+                                    : liveStatus.tunnel_status === 'CONNECTING' ? 'Conectando'
+                                    : 'Inativo'}
                                 </span>
                               </div>
                               {/* Uptime */}
                               {liveStatus.uptime && liveStatus.tunnel_status === 'UP' && (
-                                <p className="text-xs text-muted-foreground mt-1">Up: {liveStatus.uptime}</p>
+                                <p className="text-xs text-muted-foreground mt-1">Ativo há: {liveStatus.uptime}</p>
                               )}
                               {/* Traffic stats */}
                               {liveStatus.tunnel_status === 'UP' && (liveStatus.bytes_in !== undefined || liveStatus.bytes_out !== undefined) && (
                                 <p className="text-xs text-muted-foreground mt-0.5">
-                                  {liveStatus.bytes_in || 0} B in / {liveStatus.bytes_out || 0} B out
+                                  {liveStatus.bytes_in || 0} B entrada / {liveStatus.bytes_out || 0} B saída
                                 </p>
                               )}
                               {/* Error hint for IKE_ONLY */}
                               {liveStatus.tunnel_status === 'IKE_ONLY' && liveStatus.error_hint && (
-                                <p className="text-xs text-yellow-500 mt-1 max-w-[200px]" title={liveStatus.error_hint}>
+                                <p className="text-xs text-warning mt-1 max-w-[200px]" title={liveStatus.error_hint}>
                                   {liveStatus.error_hint}
                                 </p>
                               )}
@@ -657,7 +658,7 @@ export default function IPsecPage() {
                                 <span className="capitalize">{conn.status}</span>
                               </div>
                               {conn.last_error && conn.status === 'error' && (
-                                <p className="text-xs text-red-400 mt-1 max-w-[200px] truncate" title={conn.last_error}>
+                                <p className="text-xs text-destructive mt-1 max-w-[200px] truncate" title={conn.last_error}>
                                   {conn.last_error}
                                 </p>
                               )}
@@ -670,11 +671,11 @@ export default function IPsecPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => openLogsForConnection(conn.name)}
-                              title="View logs for this connection"
+                              title="Ver logs desta conexão"
                             >
                               <FileText className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="sm" onClick={() => openEditModal(conn)} title="Edit connection">
+                            <Button variant="ghost" size="sm" onClick={() => openEditModal(conn)} title="Editar conexão">
                               <Pencil className="h-4 w-4" />
                             </Button>
                             {conn.status === 'active' ? (
@@ -684,7 +685,7 @@ export default function IPsecPage() {
                                   size="sm"
                                   onClick={() => restartMutation.mutate(conn.id)}
                                   disabled={restartMutation.isPending}
-                                  title="Restart tunnel"
+                                  title="Reiniciar túnel"
                                 >
                                   <RotateCcw className="h-4 w-4" />
                                 </Button>
@@ -693,7 +694,7 @@ export default function IPsecPage() {
                                   size="sm"
                                   onClick={() => stopMutation.mutate(conn.id)}
                                   disabled={stopMutation.isPending}
-                                  title="Stop tunnel"
+                                  title="Parar túnel"
                                 >
                                   <Square className="h-4 w-4" />
                                 </Button>
@@ -704,7 +705,7 @@ export default function IPsecPage() {
                                 size="sm"
                                 onClick={() => startMutation.mutate(conn.id)}
                                 disabled={startMutation.isPending || !conn.is_enabled}
-                                title="Start tunnel"
+                                title="Iniciar túnel"
                               >
                                 <Play className="h-4 w-4" />
                               </Button>
@@ -715,7 +716,7 @@ export default function IPsecPage() {
                               onClick={() => deleteMutation.mutate(conn.id)}
                               disabled={deleteMutation.isPending}
                               className="text-destructive hover:text-destructive"
-                              title="Delete connection"
+                              title="Excluir conexão"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -735,17 +736,17 @@ export default function IPsecPage() {
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
         <DialogContent onClose={() => setIsAddModalOpen(false)} className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add IPsec Connection</DialogTitle>
-            <DialogDescription>Configure a new site-to-site IPsec VPN tunnel</DialogDescription>
+            <DialogTitle>Adicionar Conexão IPsec</DialogTitle>
+            <DialogDescription>Configure um novo túnel VPN IPsec site-to-site</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateConnection}>
             <div className="space-y-6 mt-4">
               {/* Connection Details */}
               <div className="space-y-4">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Connection Details</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Detalhes da Conexão</h3>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="add-name">Connection Name *</Label>
+                    <Label htmlFor="add-name">Nome da Conexão *</Label>
                     <Input
                       id="add-name"
                       value={formData.name}
@@ -754,12 +755,12 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-description">Description</Label>
+                    <Label htmlFor="add-description">Descrição</Label>
                     <Input
                       id="add-description"
                       value={formData.description}
                       onChange={(e) => updateField('description', e.target.value)}
-                      placeholder="VPN to main office"
+                      placeholder="VPN para o escritório principal"
                     />
                   </div>
                 </div>
@@ -768,14 +769,14 @@ export default function IPsecPage() {
               {/* Local Gateway */}
               <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Local Gateway (This Server)</h3>
+                  <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Gateway Local (Este Servidor)</h3>
                   {serverInfo?.private_ip && (
-                    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">Auto-detected</span>
+                    <span className="text-xs text-success bg-success/10 px-2 py-1 rounded">Detectado automaticamente</span>
                   )}
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <Label htmlFor="add-left_ip">Private IP</Label>
+                    <Label htmlFor="add-left_ip">IP Privado</Label>
                     <Input
                       id="add-left_ip"
                       value={formData.left_ip}
@@ -785,7 +786,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-left_subnet">Local Subnet</Label>
+                    <Label htmlFor="add-left_subnet">Sub-rede Local</Label>
                     <Input
                       id="add-left_subnet"
                       value={formData.left_subnet}
@@ -795,7 +796,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-left_id">Public IP / ID</Label>
+                    <Label htmlFor="add-left_id">IP Público / ID</Label>
                     <Input
                       id="add-left_id"
                       value={formData.left_id}
@@ -809,63 +810,63 @@ export default function IPsecPage() {
 
               {/* Remote Gateway */}
               <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Remote Gateway (Peer)</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Gateway Remoto (Peer)</h3>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <Label htmlFor="add-right_ip">Public IP *</Label>
+                    <Label htmlFor="add-right_ip">IP Público *</Label>
                     <Input
                       id="add-right_ip"
                       value={formData.right_ip}
                       onChange={(e) => updateField('right_ip', e.target.value)}
                       placeholder="187.92.78.242"
                     />
-                    <p className="text-xs text-muted-foreground">Public IP of remote peer</p>
+                    <p className="text-xs text-muted-foreground">IP público do peer remoto</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-right_subnet">Remote Subnet(s) *</Label>
+                    <Label htmlFor="add-right_subnet">Sub-rede(s) Remota(s) *</Label>
                     <Input
                       id="add-right_subnet"
                       value={formData.right_subnet}
                       onChange={(e) => updateField('right_subnet', e.target.value)}
                       placeholder="10.0.0.0/24, 192.168.1.0/24"
                     />
-                    <p className="text-xs text-muted-foreground">Use comma to separate multiple subnets</p>
+                    <p className="text-xs text-muted-foreground">Use vírgula para separar múltiplas sub-redes</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-right_id">Peer ID</Label>
+                    <Label htmlFor="add-right_id">ID do Peer</Label>
                     <Input
                       id="add-right_id"
                       value={formData.right_id}
                       onChange={(e) => updateField('right_id', e.target.value)}
                       placeholder="187.92.78.242"
                     />
-                    <p className="text-xs text-muted-foreground">Usually same as public IP</p>
+                    <p className="text-xs text-muted-foreground">Geralmente igual ao IP público</p>
                   </div>
                 </div>
               </div>
 
               {/* Authentication */}
               <div className="space-y-4">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Authentication</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Autenticação</h3>
                 <div className="space-y-2">
-                  <Label htmlFor="add-psk">Pre-Shared Key (PSK) *</Label>
+                  <Label htmlFor="add-psk">Chave Pré-Compartilhada (PSK) *</Label>
                   <Input
                     id="add-psk"
                     type="password"
                     value={formData.psk}
                     onChange={(e) => updateField('psk', e.target.value)}
-                    placeholder="Enter a strong shared secret"
+                    placeholder="Digite um segredo compartilhado forte"
                   />
-                  <p className="text-xs text-muted-foreground">Minimum 8 characters. Must match on both sides.</p>
+                  <p className="text-xs text-muted-foreground">Mínimo de 8 caracteres. Deve corresponder em ambos os lados.</p>
                 </div>
               </div>
 
               {/* Encryption Settings */}
               <div className="space-y-4">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Encryption Settings</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Configurações de Criptografia</h3>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="add-ike_version">IKE Version</Label>
+                    <Label htmlFor="add-ike_version">Versão IKE</Label>
                     <Select
                       id="add-ike_version"
                       value={formData.ike_version}
@@ -874,7 +875,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-dpd_action">DPD Action</Label>
+                    <Label htmlFor="add-dpd_action">Ação DPD</Label>
                     <Select
                       id="add-dpd_action"
                       value={formData.dpd_action}
@@ -885,7 +886,7 @@ export default function IPsecPage() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="add-ike_cipher">IKE Cipher (Phase 1)</Label>
+                    <Label htmlFor="add-ike_cipher">Cifra IKE (Fase 1)</Label>
                     <Select
                       id="add-ike_cipher"
                       value={formData.ike_cipher}
@@ -894,7 +895,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-esp_cipher">ESP Cipher (Phase 2)</Label>
+                    <Label htmlFor="add-esp_cipher">Cifra ESP (Fase 2)</Label>
                     <Select
                       id="add-esp_cipher"
                       value={formData.esp_cipher}
@@ -905,7 +906,7 @@ export default function IPsecPage() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="add-ike_lifetime">IKE Lifetime</Label>
+                    <Label htmlFor="add-ike_lifetime">Tempo de Vida IKE</Label>
                     <Input
                       id="add-ike_lifetime"
                       value={formData.ike_lifetime}
@@ -914,7 +915,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-key_lifetime">Key Lifetime</Label>
+                    <Label htmlFor="add-key_lifetime">Tempo de Vida da Chave</Label>
                     <Input
                       id="add-key_lifetime"
                       value={formData.key_lifetime}
@@ -927,7 +928,7 @@ export default function IPsecPage() {
 
               {/* Options */}
               <div className="space-y-4">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Options</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Opções</h3>
                 <div className="flex items-center gap-6">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -936,7 +937,7 @@ export default function IPsecPage() {
                       onChange={(e) => updateField('auto_start', e.target.checked)}
                       className="rounded"
                     />
-                    <span className="text-sm">Auto-start on boot</span>
+                    <span className="text-sm">Iniciar automaticamente no boot</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -945,15 +946,15 @@ export default function IPsecPage() {
                       onChange={(e) => updateField('is_enabled', e.target.checked)}
                       className="rounded"
                     />
-                    <span className="text-sm">Enabled</span>
+                    <span className="text-sm">Habilitado</span>
                   </label>
                 </div>
               </div>
             </div>
             <DialogFooter className="mt-6">
-              <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancelar</Button>
               <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? 'Creating...' : 'Create Connection'}
+                {createMutation.isPending ? 'Criando...' : 'Criar Conexão'}
               </Button>
             </DialogFooter>
           </form>
@@ -964,17 +965,17 @@ export default function IPsecPage() {
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent onClose={() => setIsEditModalOpen(false)} className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit IPsec Connection</DialogTitle>
-            <DialogDescription>Modify the IPsec connection configuration</DialogDescription>
+            <DialogTitle>Editar Conexão IPsec</DialogTitle>
+            <DialogDescription>Modifique a configuração da conexão IPsec</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditConnection}>
             <div className="space-y-6 mt-4">
               {/* Connection Details */}
               <div className="space-y-4">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Connection Details</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Detalhes da Conexão</h3>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-name">Connection Name *</Label>
+                    <Label htmlFor="edit-name">Nome da Conexão *</Label>
                     <Input
                       id="edit-name"
                       value={formData.name}
@@ -983,12 +984,12 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-description">Description</Label>
+                    <Label htmlFor="edit-description">Descrição</Label>
                     <Input
                       id="edit-description"
                       value={formData.description}
                       onChange={(e) => updateField('description', e.target.value)}
-                      placeholder="VPN to main office"
+                      placeholder="VPN para o escritório principal"
                     />
                   </div>
                 </div>
@@ -997,7 +998,7 @@ export default function IPsecPage() {
               {/* Local Gateway */}
               <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Local Gateway (This Server)</h3>
+                  <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Gateway Local (Este Servidor)</h3>
                   {serverInfo?.private_ip && (
                     <Button
                       type="button"
@@ -1012,13 +1013,13 @@ export default function IPsecPage() {
                       }}
                     >
                       <RefreshCw className="h-3 w-3 mr-1" />
-                      Auto-detect
+                      Detectar automaticamente
                     </Button>
                   )}
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-left_ip">Private IP</Label>
+                    <Label htmlFor="edit-left_ip">IP Privado</Label>
                     <Input
                       id="edit-left_ip"
                       value={formData.left_ip}
@@ -1028,7 +1029,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-left_subnet">Local Subnet</Label>
+                    <Label htmlFor="edit-left_subnet">Sub-rede Local</Label>
                     <Input
                       id="edit-left_subnet"
                       value={formData.left_subnet}
@@ -1038,7 +1039,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-left_id">Public IP / ID</Label>
+                    <Label htmlFor="edit-left_id">IP Público / ID</Label>
                     <Input
                       id="edit-left_id"
                       value={formData.left_id}
@@ -1052,63 +1053,63 @@ export default function IPsecPage() {
 
               {/* Remote Gateway */}
               <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Remote Gateway (Peer)</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Gateway Remoto (Peer)</h3>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-right_ip">Public IP *</Label>
+                    <Label htmlFor="edit-right_ip">IP Público *</Label>
                     <Input
                       id="edit-right_ip"
                       value={formData.right_ip}
                       onChange={(e) => updateField('right_ip', e.target.value)}
                       placeholder="187.92.78.242"
                     />
-                    <p className="text-xs text-muted-foreground">Public IP of remote peer</p>
+                    <p className="text-xs text-muted-foreground">IP público do peer remoto</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-right_subnet">Remote Subnet(s) *</Label>
+                    <Label htmlFor="edit-right_subnet">Sub-rede(s) Remota(s) *</Label>
                     <Input
                       id="edit-right_subnet"
                       value={formData.right_subnet}
                       onChange={(e) => updateField('right_subnet', e.target.value)}
                       placeholder="10.0.0.0/24, 192.168.1.0/24"
                     />
-                    <p className="text-xs text-muted-foreground">Use comma to separate multiple subnets</p>
+                    <p className="text-xs text-muted-foreground">Use vírgula para separar múltiplas sub-redes</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-right_id">Peer ID</Label>
+                    <Label htmlFor="edit-right_id">ID do Peer</Label>
                     <Input
                       id="edit-right_id"
                       value={formData.right_id}
                       onChange={(e) => updateField('right_id', e.target.value)}
                       placeholder="187.92.78.242"
                     />
-                    <p className="text-xs text-muted-foreground">Usually same as public IP</p>
+                    <p className="text-xs text-muted-foreground">Geralmente igual ao IP público</p>
                   </div>
                 </div>
               </div>
 
               {/* Authentication */}
               <div className="space-y-4">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Authentication</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Autenticação</h3>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-psk">Pre-Shared Key (PSK)</Label>
+                  <Label htmlFor="edit-psk">Chave Pré-Compartilhada (PSK)</Label>
                   <Input
                     id="edit-psk"
                     type="password"
                     value={formData.psk}
                     onChange={(e) => updateField('psk', e.target.value)}
-                    placeholder="Leave unchanged or enter new key"
+                    placeholder="Deixe inalterado ou digite uma nova chave"
                   />
-                  <p className="text-xs text-muted-foreground">Leave as ******** to keep current key, or enter a new one</p>
+                  <p className="text-xs text-muted-foreground">Deixe como ******** para manter a chave atual, ou digite uma nova</p>
                 </div>
               </div>
 
               {/* Encryption Settings */}
               <div className="space-y-4">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Encryption Settings</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Configurações de Criptografia</h3>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-ike_version">IKE Version</Label>
+                    <Label htmlFor="edit-ike_version">Versão IKE</Label>
                     <Select
                       id="edit-ike_version"
                       value={formData.ike_version}
@@ -1117,7 +1118,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-dpd_action">DPD Action</Label>
+                    <Label htmlFor="edit-dpd_action">Ação DPD</Label>
                     <Select
                       id="edit-dpd_action"
                       value={formData.dpd_action}
@@ -1128,7 +1129,7 @@ export default function IPsecPage() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-ike_cipher">IKE Cipher (Phase 1)</Label>
+                    <Label htmlFor="edit-ike_cipher">Cifra IKE (Fase 1)</Label>
                     <Select
                       id="edit-ike_cipher"
                       value={formData.ike_cipher}
@@ -1137,7 +1138,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-esp_cipher">ESP Cipher (Phase 2)</Label>
+                    <Label htmlFor="edit-esp_cipher">Cifra ESP (Fase 2)</Label>
                     <Select
                       id="edit-esp_cipher"
                       value={formData.esp_cipher}
@@ -1148,7 +1149,7 @@ export default function IPsecPage() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-ike_lifetime">IKE Lifetime</Label>
+                    <Label htmlFor="edit-ike_lifetime">Tempo de Vida IKE</Label>
                     <Input
                       id="edit-ike_lifetime"
                       value={formData.ike_lifetime}
@@ -1157,7 +1158,7 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-key_lifetime">Key Lifetime</Label>
+                    <Label htmlFor="edit-key_lifetime">Tempo de Vida da Chave</Label>
                     <Input
                       id="edit-key_lifetime"
                       value={formData.key_lifetime}
@@ -1170,7 +1171,7 @@ export default function IPsecPage() {
 
               {/* Options */}
               <div className="space-y-4">
-                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Options</h3>
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Opções</h3>
                 <div className="flex items-center gap-6">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -1179,7 +1180,7 @@ export default function IPsecPage() {
                       onChange={(e) => updateField('auto_start', e.target.checked)}
                       className="rounded"
                     />
-                    <span className="text-sm">Auto-start on boot</span>
+                    <span className="text-sm">Iniciar automaticamente no boot</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -1188,15 +1189,15 @@ export default function IPsecPage() {
                       onChange={(e) => updateField('is_enabled', e.target.checked)}
                       className="rounded"
                     />
-                    <span className="text-sm">Enabled</span>
+                    <span className="text-sm">Habilitado</span>
                   </label>
                 </div>
               </div>
             </div>
             <DialogFooter className="mt-6">
-              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancelar</Button>
               <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+                {updateMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
               </Button>
             </DialogFooter>
           </form>
@@ -1207,28 +1208,28 @@ export default function IPsecPage() {
       <Dialog open={isConfigPreviewOpen} onOpenChange={setIsConfigPreviewOpen}>
         <DialogContent onClose={() => setIsConfigPreviewOpen(false)} className="max-w-3xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Configuration Preview</DialogTitle>
-            <DialogDescription>Preview of generated ipsec.conf and ipsec.secrets</DialogDescription>
+            <DialogTitle>Visualização da Configuração</DialogTitle>
+            <DialogDescription>Prévia dos arquivos ipsec.conf e ipsec.secrets gerados</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div>
               <h3 className="font-medium mb-2">ipsec.conf</h3>
               <pre className="p-4 bg-muted rounded-lg text-xs overflow-auto max-h-60 font-mono">
-                {configPreview?.ipsec_conf || 'Loading...'}
+                {configPreview?.ipsec_conf || 'Carregando...'}
               </pre>
             </div>
             <div>
               <h3 className="font-medium mb-2">ipsec.secrets</h3>
               <pre className="p-4 bg-muted rounded-lg text-xs overflow-auto max-h-40 font-mono">
-                {configPreview?.ipsec_secrets || 'Loading...'}
+                {configPreview?.ipsec_secrets || 'Carregando...'}
               </pre>
-              <p className="text-xs text-muted-foreground mt-1">Warning: Contains sensitive PSK values</p>
+              <p className="text-xs text-muted-foreground mt-1">Aviso: Contém valores sensíveis de PSK</p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsConfigPreviewOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setIsConfigPreviewOpen(false)}>Fechar</Button>
             <Button onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending}>
-              {applyMutation.isPending ? 'Applying...' : 'Apply Configuration'}
+              {applyMutation.isPending ? 'Aplicando...' : 'Aplicar Configuração'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1240,10 +1241,10 @@ export default function IPsecPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Terminal className="h-5 w-5" />
-              IPsec Status
+              Status do IPsec
             </DialogTitle>
             <DialogDescription>
-              Detailed StrongSwan status output (ipsec statusall)
+              Saída detalhada do status do StrongSwan (ipsec statusall)
             </DialogDescription>
           </DialogHeader>
           <div className="mt-4">
@@ -1252,25 +1253,25 @@ export default function IPsecPage() {
                 {isFetchingDetailedStatus && (
                   <>
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Updating...</span>
+                    <span>Atualizando...</span>
                   </>
                 )}
                 {!isFetchingDetailedStatus && (
-                  <span>Auto-refresh every 5s</span>
+                  <span>Atualização automática a cada 5s</span>
                 )}
               </div>
               <Button variant="ghost" size="sm" onClick={() => refetchDetailedStatus()}>
                 <RefreshCw className={`h-4 w-4 ${isFetchingDetailedStatus ? 'animate-spin' : ''}`} />
               </Button>
             </div>
-            <pre className="p-4 bg-black text-green-400 rounded-lg text-xs overflow-auto max-h-[60vh] font-mono whitespace-pre-wrap">
+            <pre className="p-4 bg-black text-success rounded-lg text-xs overflow-auto max-h-[60vh] font-mono whitespace-pre-wrap">
               {detailedStatus?.success === false
-                ? `Error: ${detailedStatus?.output || 'Unknown error'}`
-                : detailedStatus?.output || detailedStatus?.stdout || 'Loading...'}
+                ? `Erro: ${detailedStatus?.output || 'Erro desconhecido'}`
+                : detailedStatus?.output || detailedStatus?.stdout || 'Carregando...'}
             </pre>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsStatusModalOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setIsStatusModalOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1281,12 +1282,12 @@ export default function IPsecPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              {logsConnectionName ? `Logs: ${logsConnectionName}` : 'All StrongSwan Logs'}
+              {logsConnectionName ? `Logs: ${logsConnectionName}` : 'Todos os Logs do StrongSwan'}
             </DialogTitle>
             <DialogDescription>
               {logsConnectionName
-                ? `Log entries for connection "${logsConnectionName}"`
-                : 'All recent IPsec/StrongSwan log entries'}
+                ? `Entradas de log da conexão "${logsConnectionName}"`
+                : 'Todas as entradas recentes de log do IPsec/StrongSwan'}
               {logsData?.source && <span className="ml-1">({logsData.source})</span>}
             </DialogDescription>
           </DialogHeader>
@@ -1296,11 +1297,11 @@ export default function IPsecPage() {
                 {isFetchingLogs && (
                   <>
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Updating...</span>
+                    <span>Atualizando...</span>
                   </>
                 )}
                 {!isFetchingLogs && (
-                  <span>Auto-refresh every 3s (Live)</span>
+                  <span>Atualização automática a cada 3s (Ao Vivo)</span>
                 )}
               </div>
               <Button variant="ghost" size="sm" onClick={() => refetchLogs()}>
@@ -1309,12 +1310,12 @@ export default function IPsecPage() {
             </div>
             <pre className="p-4 bg-black text-gray-300 rounded-lg text-xs overflow-auto max-h-[60vh] font-mono whitespace-pre-wrap">
               {logsData?.success === false
-                ? `Error: ${logsData?.logs || 'Could not retrieve logs'}`
-                : logsData?.logs || 'Loading logs...'}
+                ? `Erro: ${logsData?.logs || 'Não foi possível obter os logs'}`
+                : logsData?.logs || 'Carregando logs...'}
             </pre>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsLogsModalOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setIsLogsModalOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

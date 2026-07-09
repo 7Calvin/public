@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
+import { PageHeader } from '@/components/PageHeader'
 import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save } from 'lucide-react'
 import SystemUpdateCard from '@/components/SystemUpdateCard'
 
@@ -147,10 +148,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage your account settings</p>
-      </div>
+      <PageHeader title="Configurações" subtitle="Gerencie sua conta e o sistema" />
 
       {/* Profile Info */}
       <Card>
@@ -295,12 +293,12 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           {user?.mfa_enabled ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-2 text-green-500">
+              <div className="flex items-center gap-2 text-success">
                 <Shield className="h-5 w-5" />
                 <span>MFA is enabled</span>
               </div>
               {user?.mfa_required && (
-                <p className="text-sm text-yellow-500">
+                <p className="text-sm text-warning">
                   MFA is required for your account and cannot be disabled.
                 </p>
               )}
@@ -514,8 +512,8 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground">Certificate</p>
                     {certInfo ? (
                       <p className={
-                        certInfo.status === 'valid' ? 'text-green-500 font-medium'
-                          : certInfo.status === 'expiring' ? 'text-yellow-500 font-medium'
+                        certInfo.status === 'valid' ? 'text-success font-medium'
+                          : certInfo.status === 'expiring' ? 'text-warning font-medium'
                           : 'text-destructive font-medium'
                       }>
                         {certInfo.status === 'valid' ? 'Valid'
@@ -529,7 +527,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">SSL</p>
-                    <p className={mgmtDomain.ssl_enabled ? 'text-green-500 font-medium' : 'text-muted-foreground'}>
+                    <p className={mgmtDomain.ssl_enabled ? 'text-success font-medium' : 'text-muted-foreground'}>
                       {mgmtDomain.ssl_enabled ? 'Let\'s Encrypt' : 'Disabled'}
                     </p>
                   </div>
