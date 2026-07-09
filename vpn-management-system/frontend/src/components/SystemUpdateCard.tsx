@@ -38,8 +38,6 @@ export default function SystemUpdateCard() {
   const [checking, setChecking] = useState(false)
   const [status, setStatus] = useState<UpdateStatus | null>(null)
   const [polling, setPolling] = useState(false)
-  const [backup, setBackup] = useState(true)
-  const [runMigrations, setRunMigrations] = useState(true)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
@@ -124,7 +122,7 @@ export default function SystemUpdateCard() {
       return
     }
     try {
-      await systemApi.startUpdate({ backup, run_migrations: runMigrations })
+      await systemApi.startUpdate({ backup: true, run_migrations: true })
       setStatus({ state: 'running', pct: 1, message: 'Iniciando atualização…' })
       setPolling(true)
     } catch (e: any) {
@@ -234,22 +232,12 @@ export default function SystemUpdateCard() {
           </div>
         )}
 
-        {/* Options */}
+        {/* Update is always safe: automatic backup + migrations + rollback */}
         {!running && (
-          <div className="flex flex-col gap-2 text-sm">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={backup} onChange={(e) => setBackup(e.target.checked)} />
-              Fazer backup (banco + PKI do OpenVPN) antes de atualizar
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={runMigrations}
-                onChange={(e) => setRunMigrations(e.target.checked)}
-              />
-              Rodar migrações do banco (alembic) após atualizar
-            </label>
-          </div>
+          <p className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+            A atualização faz <span className="text-foreground">backup automático</span> (banco + PKI do OpenVPN) e aplica as{' '}
+            <span className="text-foreground">migrações do banco</span> antes de concluir. Se algo falhar, faz <span className="text-foreground">rollback automático</span>.
+          </p>
         )}
 
         {/* Actions */}
