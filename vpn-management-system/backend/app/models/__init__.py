@@ -4,6 +4,7 @@ Database Models
 from app.models.user import User, UserType
 from app.models.vpn_profile import VPNProfile, AuthMethod
 from app.models.connection import Connection, ConnectionStatus
+from app.models.bandwidth_sample import BandwidthSample
 from app.models.firewall import FirewallRule, FirewallAction, ProtocolType
 from app.models.audit_log import AuditLog
 from app.models.ip_pool import IPPool
@@ -22,6 +23,8 @@ __all__ = [
     # Connection
     "Connection",
     "ConnectionStatus",
+    # Bandwidth samples (throughput time-series)
+    "BandwidthSample",
     # Firewall
     "FirewallRule",
     "FirewallAction",

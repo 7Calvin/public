@@ -33,6 +33,7 @@ export default function DashboardPage() {
   const { data: userStats } = useQuery({ queryKey: ['user-stats'], queryFn: () => usersApi.stats().then((r) => r.data), enabled: isAdmin })
   const { data: vpnStatus } = useQuery({ queryKey: ['vpn-status'], queryFn: () => vpnApi.serverStatus().then((r) => r.data), refetchInterval: 30000, enabled: isAdmin })
   const { data: ipsecStatus } = useQuery({ queryKey: ['ipsec-status'], queryFn: () => ipsecApi.status().then((r) => r.data), refetchInterval: 15000, enabled: isAdmin })
+  const { data: throughput } = useQuery({ queryKey: ['throughput'], queryFn: () => connectionsApi.throughput('24h').then((r) => r.data), refetchInterval: 60000, enabled: isAdmin })
 
   const { data: myProfile } = useQuery({ queryKey: ['my-vpn-profile'], queryFn: () => vpnApi.getProfile().then((r) => r.data).catch(() => null), enabled: !isAdmin })
   const { data: myStats } = useQuery({ queryKey: ['my-connection-stats'], queryFn: () => connectionsApi.myStats().then((r) => r.data).catch(() => null), enabled: !isAdmin })
@@ -89,7 +90,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <ThroughputChart />
+            <ThroughputChart points={throughput?.points ?? []} />
           </CardContent>
         </Card>
 

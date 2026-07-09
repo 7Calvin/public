@@ -27,6 +27,7 @@ from app.models import (
 from app.models.firewall import NATRule  # noqa: F401
 from app.models.proxy_route import ProxyRoute  # noqa: F401
 from app.models.acme_challenge import ACMEChallenge  # noqa: F401
+from app.models.bandwidth_sample import BandwidthSample  # noqa: F401
 
 # Import Base from session
 from app.db.session import Base

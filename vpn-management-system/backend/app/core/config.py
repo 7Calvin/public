@@ -190,6 +190,13 @@ class Settings(BaseSettings):
     LOG_FILE: str = "/var/log/vpn-management/app.log"
     AUDIT_LOG_RETENTION_DAYS: int = 365
 
+    # ==================== Metrics / Bandwidth Sampling ====================
+    # Background sampler that snapshots server-wide OpenVPN byte counters to
+    # power the dashboard throughput chart. Throughput = delta between samples.
+    BANDWIDTH_SAMPLING_ENABLED: bool = True
+    BANDWIDTH_SAMPLE_INTERVAL_SECONDS: int = 300  # sample every 5 min
+    BANDWIDTH_RETENTION_HOURS: int = 48  # keep ~2 days of samples
+
     # ==================== Rate Limiting ====================
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60

@@ -91,6 +91,19 @@ class BandwidthStats(BaseModel):
     data_points: List[dict]  # Time series data
 
 
+class ThroughputPoint(BaseModel):
+    """A single throughput sample (bytes transferred during one interval)"""
+    timestamp: datetime
+    bytes_sent: int      # server -> clients (download / "saída")
+    bytes_received: int  # clients -> server (upload / "entrada")
+
+
+class ThroughputResponse(BaseModel):
+    """Throughput time-series for the dashboard chart"""
+    window: str  # 1h, 6h, 24h, 7d
+    points: List[ThroughputPoint]
+
+
 class UserConnectionStats(BaseModel):
     """Per-user connection statistics"""
     user_id: UUID

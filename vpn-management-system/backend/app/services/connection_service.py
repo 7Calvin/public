@@ -9,12 +9,13 @@ import socket
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func, and_, or_
+from sqlalchemy import select, update, delete, func, and_, or_
 from sqlalchemy.orm import selectinload
 
 from app.models.user import User
 from app.models.vpn_profile import VPNProfile
 from app.models.connection import Connection, ConnectionStatus
+from app.models.bandwidth_sample import BandwidthSample
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -522,6 +523,73 @@ class ConnectionService:
             "peak_bandwidth_mbps": 0,  # TODO: Track peak bandwidth
             "data_points": [],  # TODO: Time series data
         }
+
+    # ==================== Bandwidth Time-Series ====================
+
+    async def record_bandwidth_sample(self) -> BandwidthSample:
+        """Snapshot current server-wide cumulative byte counters from OpenVPN.
+
+        Reads the live per-client counters from the management interface and
+        stores their sum as one time-series row. Throughput for an interval is
+        later computed as the delta between two consecutive snapshots.
+        """
+        live = await self.get_live_connections_from_server()
+        cum_sent = sum(int(c.get("bytes_sent") or 0) for c in live)
+        cum_received = sum(int(c.get("bytes_received") or 0) for c in live)
+
+        sample = BandwidthSample(
+            cum_bytes_sent=cum_sent,
+            cum_bytes_received=cum_received,
+            active_clients=len(live),
+        )
+        self.db.add(sample)
+        return sample
+
+    async def prune_bandwidth_samples(self, retention_hours: int) -> int:
+        """Delete bandwidth samples older than the retention window."""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=retention_hours)
+        result = await self.db.execute(
+            delete(BandwidthSample).where(BandwidthSample.recorded_at < cutoff)
+        )
+        return result.rowcount or 0
+
+    async def get_throughput(self, window: str = "24h") -> dict:
+        """Build the throughput time-series for the dashboard chart.
+
+        Returns one point per sampling interval, where each point's bytes are
+        the delta between consecutive cumulative snapshots. Counter resets (a
+        client reconnecting or disconnecting drops its cumulative bytes out of
+        the server-wide sum) are clamped to 0 so the chart never dips negative.
+        """
+        window_map = {
+            "1h": timedelta(hours=1),
+            "6h": timedelta(hours=6),
+            "24h": timedelta(hours=24),
+            "7d": timedelta(days=7),
+        }
+        start_time = datetime.now(timezone.utc) - window_map.get(window, timedelta(hours=24))
+
+        result = await self.db.execute(
+            select(BandwidthSample)
+            .where(BandwidthSample.recorded_at >= start_time)
+            .order_by(BandwidthSample.recorded_at.asc())
+        )
+        samples = result.scalars().all()
+
+        points = []
+        prev = None
+        for s in samples:
+            if prev is not None:
+                out = int(s.cum_bytes_sent) - int(prev.cum_bytes_sent)
+                inbound = int(s.cum_bytes_received) - int(prev.cum_bytes_received)
+                points.append({
+                    "timestamp": s.recorded_at,
+                    "bytes_sent": out if out > 0 else 0,
+                    "bytes_received": inbound if inbound > 0 else 0,
+                })
+            prev = s
+
+        return {"window": window, "points": points}
 
     async def get_user_stats(self, user_id: UUID) -> dict:
         """Get statistics for a specific user"""

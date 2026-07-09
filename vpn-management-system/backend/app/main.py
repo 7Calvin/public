@@ -193,6 +193,63 @@ async def startup_event():
 
     asyncio.create_task(_audit_retention_loop())
 
+    # Background bandwidth sampler: snapshot server-wide OpenVPN byte counters
+    # on an interval so the dashboard throughput chart has real time-series data.
+    # A Postgres session-level advisory lock ensures exactly ONE process samples,
+    # even if the backend is ever run with more than one uvicorn worker.
+    async def _bandwidth_sample_loop():
+        from sqlalchemy import text
+        from app.services.connection_service import ConnectionService
+
+        interval = getattr(settings, "BANDWIDTH_SAMPLE_INTERVAL_SECONDS", 300)
+        retention_hours = getattr(settings, "BANDWIDTH_RETENTION_HOURS", 48)
+        LOCK_KEY = 4823170  # arbitrary app-wide id for the sampler advisory lock
+
+        # Hold a dedicated connection open for the process lifetime so the
+        # session-level advisory lock persists. Only the worker that wins the
+        # lock runs the sampler; the others exit this coroutine.
+        lock_conn = await engine.connect()
+        try:
+            got = (await lock_conn.execute(
+                text("SELECT pg_try_advisory_lock(:k)"), {"k": LOCK_KEY}
+            )).scalar()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Bandwidth sampler: could not acquire lock: {e}")
+            await lock_conn.close()
+            return
+
+        if not got:
+            logger.info("Bandwidth sampler: another worker holds the lock; not sampling here")
+            await lock_conn.close()
+            return
+
+        # Close the acquiring transaction so the connection is not left idle-in-
+        # transaction. Session-level advisory locks survive COMMIT, so the lock
+        # stays held for as long as lock_conn is open.
+        await lock_conn.commit()
+
+        logger.info(f"Bandwidth sampler started (interval={interval}s)")
+        try:
+            while True:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        svc = ConnectionService(db)
+                        await svc.record_bandwidth_sample()
+                        await svc.prune_bandwidth_samples(retention_hours)
+                        await db.commit()
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Bandwidth sample loop error: {e}")
+                await asyncio.sleep(interval)
+        finally:
+            try:
+                await lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOCK_KEY})
+            except Exception:  # noqa: BLE001
+                pass
+            await lock_conn.close()
+
+    if getattr(settings, "BANDWIDTH_SAMPLING_ENABLED", True):
+        asyncio.create_task(_bandwidth_sample_loop())
+
     # Note: Firewall rules are saved in database and applied by NAT agent
     # The backend does not directly modify iptables (requires privileged container)
 

@@ -279,6 +279,9 @@ export const connectionsApi = {
 
   bandwidth: () => api.get('/connections/stats/bandwidth'),
 
+  throughput: (window: '1h' | '6h' | '24h' | '7d' = '24h') =>
+    api.get('/connections/throughput', { params: { window } }),
+
   userStats: (userId: string) => api.get(`/connections/stats/user/${userId}`),
 
   myStats: () => api.get('/connections/my/stats'),

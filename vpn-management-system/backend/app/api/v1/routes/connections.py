@@ -17,6 +17,7 @@ from app.schemas.connection import (
     ActiveConnectionResponse,
     ConnectionStats,
     BandwidthStats,
+    ThroughputResponse,
     UserConnectionStats,
     DisconnectRequest,
 )
@@ -210,6 +211,24 @@ async def get_my_active_connections(
             for c in connections
         ]
     }
+
+
+@router.get("/throughput", response_model=ThroughputResponse)
+async def get_throughput(
+    window: str = Query("24h", pattern="^(1h|6h|24h|7d)$"),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Bandwidth throughput time-series for the dashboard chart (admin only).
+
+    Each point is the traffic transferred during one sampling interval,
+    computed from periodic snapshots of the server-wide byte counters.
+    """
+    connection_service = ConnectionService(db)
+
+    data = await connection_service.get_throughput(window=window)
+
+    return ThroughputResponse(**data)
 
 
 @router.get("/{connection_id}", response_model=ConnectionResponse)

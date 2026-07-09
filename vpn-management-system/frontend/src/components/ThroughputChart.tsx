@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatBytes } from '@/lib/utils'
 
-// Mock 24h throughput (bytes/interval), one point every 2h. Replace with real
-// time-series data once the backend keeps bandwidth history.
-const HOURS = ['00:00', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00', '24:00']
-const OUT = [1.2, 0.9, 0.7, 1.1, 2.4, 3.1, 4.0, 3.6, 4.8, 5.6, 4.2, 3.0, 2.1].map((v) => v * 1024 * 1024)
-const IN = [0.4, 0.3, 0.25, 0.4, 0.9, 1.2, 1.5, 1.3, 1.8, 2.1, 1.6, 1.1, 0.8].map((v) => v * 1024 * 1024)
+export interface ThroughputPoint {
+  timestamp: string
+  bytes_sent: number // saída (server -> clients)
+  bytes_received: number // entrada (clients -> server)
+}
 
 const PAD = { l: 8, r: 8, t: 14, b: 22 }
 const H = 240
 
-export function ThroughputChart() {
+function hhmm(ts: string): string {
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+export function ThroughputChart({ points }: { points: ThroughputPoint[] }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(720)
   const [hover, setHover] = useState<number | null>(null)
@@ -23,9 +29,14 @@ export function ThroughputChart() {
     return () => ro.disconnect()
   }, [])
 
-  const { outLine, outArea, inLine, xs, max } = useMemo(() => {
+  const OUT = useMemo(() => points.map((p) => p.bytes_sent), [points])
+  const IN = useMemo(() => points.map((p) => p.bytes_received), [points])
+  const HOURS = useMemo(() => points.map((p) => hhmm(p.timestamp)), [points])
+
+  const { outLine, outArea, inLine, xs, max, labelIdx } = useMemo(() => {
     const n = OUT.length
-    const max = Math.max(...OUT, ...IN) * 1.15
+    if (n < 2) return { outLine: '', outArea: '', inLine: '', xs: [] as number[], max: 1, labelIdx: [] as number[] }
+    const max = Math.max(...OUT, ...IN, 1) * 1.15
     const innerW = w - PAD.l - PAD.r
     const innerH = H - PAD.t - PAD.b
     const xs = OUT.map((_, i) => PAD.l + (innerW * i) / (n - 1))
@@ -34,10 +45,25 @@ export function ThroughputChart() {
     const outLine = line(OUT)
     const inLine = line(IN)
     const outArea = `${outLine} L${xs[n - 1].toFixed(1)},${(PAD.t + innerH).toFixed(1)} L${xs[0].toFixed(1)},${(PAD.t + innerH).toFixed(1)} Z`
-    return { outLine, outArea, inLine, xs, max }
-  }, [w])
+    // Show at most ~7 evenly-spaced x labels to avoid crowding.
+    const step = Math.max(1, Math.ceil(n / 7))
+    const labelIdx = OUT.map((_, i) => i).filter((i) => i % step === 0)
+    return { outLine, outArea, inLine, xs, max, labelIdx }
+  }, [w, OUT, IN])
 
   const y = (v: number) => PAD.t + (H - PAD.t - PAD.b) - ((H - PAD.t - PAD.b) * v) / max
+
+  // Not enough samples yet — the background sampler needs at least two points
+  // to compute a throughput interval.
+  if (OUT.length < 2) {
+    return (
+      <div ref={wrapRef} className="w-full">
+        <div className="flex items-center justify-center text-center text-sm text-muted-foreground" style={{ height: H }}>
+          Coletando dados de throughput… o gráfico aparece após as primeiras amostras.
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div ref={wrapRef} className="w-full">
@@ -73,9 +99,9 @@ export function ThroughputChart() {
         <path d={inLine} fill="none" stroke="hsl(255 100% 68%)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
 
         {/* x labels */}
-        {HOURS.map((h, i) => (i % 2 === 0 ? (
-          <text key={h} x={xs[i]} y={H - 6} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>{h}</text>
-        ) : null))}
+        {labelIdx.map((i) => (
+          <text key={i} x={xs[i]} y={H - 6} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>{HOURS[i]}</text>
+        ))}
 
         {/* hover */}
         {hover !== null && (
