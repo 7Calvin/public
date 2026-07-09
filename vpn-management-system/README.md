@@ -562,6 +562,48 @@ docker-compose exec postgres psql -U vpn_admin vpn_management  # SQL
 
 ---
 
+## Testes — Smoke Test
+
+O `scripts/smoke_test.py` valida os fluxos principais da API **de ponta a ponta**
+antes/depois de um deploy: login, troca de senha, ativar/desativar MFA, CRUD de
+usuário, conexão IPsec, rota de proxy e regra de firewall, e round-trip de
+configuração. Tudo que ele cria é prefixado com `smoketest` e **removido no final**
+(mesmo se algum passo falhar). Serve como checklist rápido de "está tudo funcional?".
+
+### Como rodar
+
+Roda **dentro do container do backend** — ele gera um token de admin pela própria
+app, então funciona mesmo com admin exigindo MFA:
+
+```bash
+# no servidor (via SSH)
+docker exec -w /app vpn-backend python /app/scripts/smoke_test.py
+```
+
+Ou apontando para qualquer base URL com um token JWT já pronto:
+
+```bash
+SMOKE_BASE=https://seu-dominio.com/api/v1 SMOKE_TOKEN=<jwt> \
+  python scripts/smoke_test.py
+```
+
+**Saída:** cada passo imprime `PASS`/`FAIL`; exit code `0` = tudo passou, `1` =
+algo falhou. Uma execução típica cobre ~32 checagens.
+
+### Verificar a auditoria depois
+
+Como o smoke test exerce criações e remoções reais (e depois limpa), ele é ótimo
+para conferir a **trilha de auditoria**: rode-o e abra **Auditoria** no painel —
+você verá entradas como `Usuário criado: smoketest_1234 (usuário)`,
+`Conexão IPsec criada: smoketest-...` e as respectivas remoções, atribuídas ao
+admin. (Os nomes nos rótulos exigem backend ≥ 1.2.3.)
+
+> Nota: o smoke test autentica gerando o token direto pela app (não via
+> `/auth/login`), então ele **não** gera um evento "Login no painel" — só as ações
+> de CRUD/config.
+
+---
+
 ## Releases & Deploy
 
 O deploy é feito pelo **update-agent** (roda no host), que faz `git pull` da
