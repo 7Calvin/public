@@ -70,7 +70,7 @@ if ($curBranch -ne $Branch) { Die "on branch '$curBranch', expected '$Branch' (u
 
 & git diff --quiet; $dirty1 = $LASTEXITCODE
 & git diff --cached --quiet; $dirty2 = $LASTEXITCODE
-if ($dirty1 -ne 0 -or $dirty2 -ne 0) { & git status --short; Die "working tree not clean — commit or stash first" }
+if ($dirty1 -ne 0 -or $dirty2 -ne 0) { & git status --short; Die "working tree not clean - commit or stash first" }
 
 if (Git-Ok @("rev-parse", "-q", "--verify", "refs/tags/$Tag")) { Die "tag $Tag already exists locally" }
 if (Git-Ok @("ls-remote", "--exit-code", "--tags", $Remote, $Tag)) { Die "tag $Tag already exists on $Remote" }
@@ -79,7 +79,7 @@ Info "Fetching $Remote ..."
 & git fetch --quiet $Remote $Branch --tags
 if (Git-Ok @("rev-parse", "-q", "--verify", "$Remote/$Branch")) {
   if (-not (Git-Ok @("merge-base", "--is-ancestor", "$Remote/$Branch", $Branch))) {
-    Die "local $Branch is behind/diverged from $Remote/$Branch — run: git pull --ff-only $Remote $Branch"
+    Die "local $Branch is behind/diverged from $Remote/$Branch - run: git pull --ff-only $Remote $Branch"
   }
 }
 Ok "Preflight OK"
