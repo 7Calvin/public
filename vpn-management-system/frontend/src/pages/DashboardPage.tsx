@@ -45,7 +45,7 @@ export default function DashboardPage() {
       <div className="space-y-6">
         <PageHeader
           title="Centro de Operações"
-          subtitle="Visão geral do sistema VPN"
+          subtitle="Visão geral do sistema"
           actions={
             <Button variant="outline" size="sm" onClick={refreshAll}>
               <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
