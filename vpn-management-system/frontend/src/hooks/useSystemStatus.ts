@@ -6,6 +6,7 @@ export type AlertLevel = 'info' | 'warn' | 'down'
 export interface SystemAlert {
   level: AlertLevel
   text: string
+  href?: string
 }
 
 export interface SystemInfo {
@@ -61,26 +62,26 @@ export function useSystemStatus() {
 
   const alerts: SystemAlert[] = []
   if (upd?.update_available) {
-    alerts.push({ level: 'info', text: `Atualização ${upd.latest ? 'v' + upd.latest : 'nova'} disponível` })
+    alerts.push({ level: 'info', text: `Atualização ${upd.latest ? 'v' + upd.latest : 'nova'} disponível`, href: '/settings' })
   }
   if (vpn && vpn.is_running === false) {
-    alerts.push({ level: 'down', text: 'Servidor OpenVPN parado' })
+    alerts.push({ level: 'down', text: 'Servidor OpenVPN parado', href: '/vpn' })
   }
   if (ipsec?.strongswan_running === false && ipsec?.total_connections > 0) {
-    alerts.push({ level: 'down', text: 'StrongSwan parado' })
+    alerts.push({ level: 'down', text: 'StrongSwan parado', href: '/ipsec' })
   }
   if (typeof info?.disk_pct === 'number' && info.disk_pct >= 85) {
-    alerts.push({ level: 'warn', text: `Disco em ${info.disk_pct}%` })
+    alerts.push({ level: 'warn', text: `Disco em ${info.disk_pct}%`, href: '/dashboard' })
   }
   if (typeof info?.mem_pct === 'number' && info.mem_pct >= 90) {
-    alerts.push({ level: 'warn', text: `Memória em ${info.mem_pct}%` })
+    alerts.push({ level: 'warn', text: `Memória em ${info.mem_pct}%`, href: '/dashboard' })
   }
   if (typeof info?.cpu_pct === 'number' && info.cpu_pct >= 90) {
-    alerts.push({ level: 'warn', text: `CPU em ${info.cpu_pct}%` })
+    alerts.push({ level: 'warn', text: `CPU em ${info.cpu_pct}%`, href: '/dashboard' })
   }
   if (ipsec?.total_connections > 0 && ipsec.active_tunnels < ipsec.total_connections) {
     const down = ipsec.total_connections - ipsec.active_tunnels
-    alerts.push({ level: 'warn', text: `${down} túnel(is) IPsec fora do ar` })
+    alerts.push({ level: 'warn', text: `${down} túnel(is) IPsec fora do ar`, href: '/ipsec' })
   }
 
   const status: 'ok' | 'warn' | 'down' =
