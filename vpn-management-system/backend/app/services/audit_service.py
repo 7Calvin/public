@@ -98,6 +98,44 @@ def _actor_id(request) -> Optional[uuid.UUID]:
         return None
 
 
+async def _resolve_target(path: str) -> Optional[str]:
+    """Best-effort display name of the resource in the path (users/ipsec/proxy/
+    firewall). Resolved BEFORE the action so deletes still find the row."""
+    rid = _last_uuid(path)
+    if not rid:
+        return None
+    try:
+        if re.search(rf"^{_P}/users/", path):
+            from app.models.user import User
+            model, field = User, User.username
+        elif "/ipsec/connections/" in path:
+            from app.models.ipsec import IPsecConnection
+            model, field = IPsecConnection, IPsecConnection.name
+        elif "/proxy/routes/" in path:
+            from app.models.proxy_route import ProxyRoute
+            model, field = ProxyRoute, ProxyRoute.name
+        elif "/firewall/rules/" in path:
+            from app.models.firewall import FirewallRule
+            model, field = FirewallRule, FirewallRule.name
+        else:
+            return None
+        async with AsyncSessionLocal() as db:
+            return (await db.execute(select(field).where(model.id == rid))).scalar_one_or_none()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def pre_audit(request) -> Optional[dict]:
+    """Runs BEFORE the handler: for any audited action that targets a specific
+    resource (delete, edit, reset-password, tunnel start/stop…), capture the
+    target's display name while the row still exists. Returns a context or None.
+    Only issues a read query, so it is safe to run before call_next."""
+    if not _match(request.method, request.url.path):
+        return None
+    name = await _resolve_target(request.url.path)
+    return {"target": name} if name else None
+
+
 async def record_event(
     *, action: str, resource_type: str = None, resource_id: uuid.UUID = None,
     user_id: uuid.UUID = None, username: str = None, ip: str = None,
@@ -119,21 +157,26 @@ async def record_event(
         logger.warning(f"audit write failed: {e}")
 
 
-async def record_request(request, status_code: int):
+async def record_request(request, status_code: int, ctx: Optional[dict] = None):
     """Middleware hook: log a mutating request if it maps to an audited action."""
     matched = _match(request.method, request.url.path)
     if not matched:
         return
     resource_type, label = matched
+    target = (ctx or {}).get("target")
+    if target:
+        label = f"{label}: {target}"
     if status_code >= 400:
         label = f"{label} (falhou)"
     severity = "info" if status_code < 400 else ("warning" if status_code < 500 else "error")
+    details = {"method": request.method, "path": request.url.path, "status": status_code}
+    if target:
+        details["target"] = target
     await record_event(
         action=label, resource_type=resource_type, resource_id=_last_uuid(request.url.path),
         user_id=_actor_id(request), ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
-        details={"method": request.method, "path": request.url.path, "status": status_code},
-        severity=severity,
+        details=details, severity=severity,
     )
 
 

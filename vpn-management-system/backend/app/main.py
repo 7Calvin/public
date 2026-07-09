@@ -67,10 +67,16 @@ async def add_process_time_header(request: Request, call_next):
 # Audit middleware — records mutating actions to the audit trail.
 @app.middleware("http")
 async def audit_trail_middleware(request: Request, call_next):
+    ctx = None
+    try:
+        from app.services.audit_service import pre_audit
+        ctx = await pre_audit(request)  # resolve target name before delete/edit
+    except Exception:  # noqa: BLE001
+        ctx = None
     response = await call_next(request)
     try:
         from app.services.audit_service import record_request
-        await record_request(request, response.status_code)
+        await record_request(request, response.status_code, ctx)
     except Exception:  # noqa: BLE001 — auditing must never break a request
         pass
     return response
