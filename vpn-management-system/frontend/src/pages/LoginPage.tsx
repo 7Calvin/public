@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
-import { Shield, Loader2 } from 'lucide-react'
+import { LogoMark } from '@/components/Logo'
+import { Loader2 } from 'lucide-react'
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -98,17 +99,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="relative min-h-screen flex items-center justify-center bg-background p-4 overflow-hidden">
+      {/* ambient glow */}
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-96 w-[36rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+      <Card className="relative w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary">
-              <Shield className="h-8 w-8 text-primary-foreground" />
-            </div>
+          <div className="mb-4 flex justify-center">
+            <LogoMark size={60} />
           </div>
-          <CardTitle className="text-2xl">VPN Management System</CardTitle>
+          <CardTitle className="text-2xl">Edge<span className="text-primary">Gate</span></CardTitle>
           <CardDescription>
-            {showMfa ? 'Enter your MFA code' : 'Sign in to your account'}
+            {showMfa ? 'Digite seu código MFA' : 'Entre na sua conta'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -116,11 +117,11 @@ export default function LoginPage() {
             {!showMfa ? (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
+                  <Label htmlFor="username">Usuário</Label>
                   <Input
                     id="username"
                     type="text"
-                    placeholder="Enter your username"
+                    placeholder="Digite seu usuário"
                     {...register('username')}
                     disabled={isLoading}
                   />
@@ -129,11 +130,11 @@ export default function LoginPage() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">Senha</Label>
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Enter your password"
+                    placeholder="Digite sua senha"
                     {...register('password')}
                     disabled={isLoading}
                   />
@@ -165,7 +166,7 @@ export default function LoginPage() {
               onClick={showMfa ? handleMfaSubmit : undefined}
             >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {showMfa ? 'Verify MFA' : 'Sign In'}
+              {showMfa ? 'Verificar MFA' : 'Entrar'}
             </Button>
             {showMfa && (
               <Button
@@ -177,7 +178,7 @@ export default function LoginPage() {
                   setMfaPending(false)
                 }}
               >
-                Back to Login
+                Voltar ao login
               </Button>
             )}
           </form>
