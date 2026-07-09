@@ -154,9 +154,10 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       <PageHeader title="Configurações" subtitle="Gerencie sua conta e o sistema" />
 
+      <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
       {/* Profile Info */}
       <Card>
         <CardHeader>
@@ -681,6 +682,7 @@ export default function SettingsPage() {
       )}
 
       {user?.is_admin && <SystemUpdateCard />}
+      </div>
     </div>
   )
 }
