@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
-import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save, ScrollText } from 'lucide-react'
+import { TIMEZONES, getTimezone, setTimezone } from '@/lib/tz'
+import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save, ScrollText, Clock } from 'lucide-react'
 import SystemUpdateCard from '@/components/SystemUpdateCard'
 import { Link } from 'react-router-dom'
 
@@ -31,6 +32,7 @@ export default function SettingsPage() {
   const [showMfa, setShowMfa] = useState(false)
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   // Log/audit config (preview — UI only for now)
+  const [tz, setTz] = useState(getTimezone())
   const [logRetention, setLogRetention] = useState('90')
   const [logMinSev, setLogMinSev] = useState('info')
   const [logCats, setLogCats] = useState<Record<string, boolean>>({ auth: true, vpn: true, config: true, system: true, users: true })
@@ -619,6 +621,18 @@ export default function SettingsPage() {
             <CardDescription>Retenção e o que registrar (prévia — ainda não persistido)</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2"><Clock className="h-4 w-4" /> Fuso horário (exibição)</Label>
+              <select
+                value={tz}
+                onChange={(e) => { setTz(e.target.value); setTimezone(e.target.value); toast({ title: 'Fuso horário atualizado', description: 'Aplicado aos horários do painel (recarregue as telas para ver em tudo).' }) }}
+                className="h-9 w-full max-w-xs rounded-lg border border-border bg-secondary/40 px-3 text-sm text-foreground focus:border-primary/50 focus:outline-none"
+              >
+                {TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">Os horários são guardados em UTC e exibidos neste fuso.</p>
+            </div>
+
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="font-medium text-foreground">Registro de eventos</p>

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { formatDate } from '@/lib/utils'
+import { formatDateTime } from '@/lib/tz'
 import { Plus, Search, UserCheck, UserX, Key, X, Eye, EyeOff, Server, User as UserIcon, Trash2, Copy, Check, AlertTriangle, ShieldCheck, ShieldOff } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import type { User } from '@/types'
@@ -355,7 +355,7 @@ export default function UsersPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {user.last_login_at ? formatDate(user.last_login_at) : 'Nunca'}
+                        {user.last_login_at ? formatDateTime(user.last_login_at) : 'Nunca'}
                       </td>
                       <td className="px-4 py-3">
                         <button

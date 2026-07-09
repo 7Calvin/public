@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
-import { formatBytes, formatDuration, formatDate } from '@/lib/utils'
+import { formatBytes, formatDuration } from '@/lib/utils'
+import { formatDateTime } from '@/lib/tz'
 import { Activity, RefreshCw, XCircle, Loader2 } from 'lucide-react'
 import type { Connection } from '@/types'
 
@@ -238,7 +239,7 @@ export default function ConnectionsPage() {
                         <td className="px-4 py-3 font-mono">{conn.vpn_ip}</td>
                         <td className="px-4 py-3 font-mono">{conn.source_ip}</td>
                         <td className="px-4 py-3 text-muted-foreground">
-                          {formatDate(conn.connected_at)}
+                          {formatDateTime(conn.connected_at)}
                         </td>
                         <td className="px-4 py-3">{formatDuration(conn.duration_seconds)}</td>
                         <td className="px-4 py-3">
@@ -309,7 +310,7 @@ export default function ConnectionsPage() {
                       <td className="px-4 py-3 font-mono">{conn.vpn_ip}</td>
                       <td className="px-4 py-3 font-mono">{conn.source_ip}</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {formatDate(conn.connected_at)}
+                        {formatDateTime(conn.connected_at)}
                       </td>
                       <td className="px-4 py-3">{formatDuration(conn.duration_seconds)}</td>
                       <td className="px-4 py-3">

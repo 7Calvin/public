@@ -8,6 +8,7 @@ import { useSystemStatus } from '@/hooks/useSystemStatus'
 import { ThroughputChart } from '@/components/ThroughputChart'
 import { formatBytes, formatCertificateExpiry } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { formatDateTime } from '@/lib/tz'
 import { Server as ServerIcon } from 'lucide-react'
 import { Activity, Shield, ArrowUpDown, Download, Calendar, Lock, ArrowUp, ArrowDown, RefreshCw, Users } from 'lucide-react'
 
@@ -198,7 +199,7 @@ export default function DashboardPage() {
               </div>
               <div className="grid gap-2 text-sm">
                 <Row label="IP da VPN" value={<span className="font-mono">{myActiveConnection.vpn_ip}</span>} />
-                <Row label="Conectado desde" value={new Date(myActiveConnection.connected_at).toLocaleString()} />
+                <Row label="Conectado desde" value={formatDateTime(myActiveConnection.connected_at)} />
               </div>
             </div>
           ) : (

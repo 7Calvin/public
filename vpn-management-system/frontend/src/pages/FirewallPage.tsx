@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
-import { formatDate } from '@/lib/utils'
+import { formatDateTime } from '@/lib/tz'
 import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import type { FirewallRule } from '@/types'
@@ -498,7 +498,7 @@ export default function FirewallPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Última Aplicação</p>
                 <p className="text-muted-foreground">
-                  {status.last_applied ? formatDate(status.last_applied) : 'Nunca'}
+                  {status.last_applied ? formatDateTime(status.last_applied) : 'Nunca'}
                 </p>
               </div>
             </div>

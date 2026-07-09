@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
+import { formatDateTime } from '@/lib/tz'
 import {
   Globe,
   Plus,
@@ -845,7 +846,7 @@ export default function ReverseProxyPage() {
                       </td>
                       <td className="px-4 py-3 text-xs">{cert.issuer || '-'}</td>
                       <td className="px-4 py-3 text-xs font-mono">
-                        {cert.not_after ? new Date(cert.not_after).toLocaleDateString() : '-'}
+                        {cert.not_after ? formatDateTime(cert.not_after, { dateOnly: true }) : '-'}
                       </td>
                       <td className="px-4 py-3">
                         {cert.days_remaining !== null && cert.days_remaining !== undefined ? (
