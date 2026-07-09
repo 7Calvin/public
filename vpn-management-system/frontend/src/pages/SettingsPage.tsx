@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
-import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save } from 'lucide-react'
+import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save, ScrollText } from 'lucide-react'
 import SystemUpdateCard from '@/components/SystemUpdateCard'
+import { Link } from 'react-router-dom'
 
 export default function SettingsPage() {
   const { user, checkAuth } = useAuthStore()
@@ -27,6 +28,12 @@ export default function SettingsPage() {
   const [copiedCodes, setCopiedCodes] = useState(false)
   const [editDomain, setEditDomain] = useState('')
   const [isEditingDomain, setIsEditingDomain] = useState(false)
+  const [showMfa, setShowMfa] = useState(false)
+  const [showPasswordForm, setShowPasswordForm] = useState(false)
+  // Log/audit config (preview — UI only for now)
+  const [logRetention, setLogRetention] = useState('90')
+  const [logMinSev, setLogMinSev] = useState('info')
+  const [logCats, setLogCats] = useState<Record<string, boolean>>({ auth: true, vpn: true, config: true, system: true, users: true })
 
   // Management panel domain (admin only)
   const { data: mgmtDomain, refetch: refetchMgmtDomain } = useQuery({
@@ -155,302 +162,336 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
-            Profile Information
+            Informações do perfil
           </CardTitle>
-          <CardDescription>Your account details</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <Label className="text-muted-foreground">Username</Label>
-              <p className="font-medium">{user?.username}</p>
-            </div>
-            <div>
-              <Label className="text-muted-foreground">Email</Label>
-              <p className="font-medium">{user?.email}</p>
-            </div>
-            <div>
-              <Label className="text-muted-foreground">Account Type</Label>
-              <p className="font-medium capitalize">{user?.user_type}</p>
-            </div>
-            <div>
-              <Label className="text-muted-foreground">Role</Label>
-              <p className="font-medium">{user?.is_admin ? 'Administrator' : 'User'}</p>
-            </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Usuário</p>
+            <p className="font-medium text-foreground">{user?.username}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Email</p>
+            <p className="font-medium text-foreground">{user?.email}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Tipo de conta</p>
+            <p className="font-medium text-foreground">{user?.is_admin ? 'Admin' : 'Usuário'}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Papel</p>
+            <p className="font-medium text-foreground">{user?.is_admin ? 'Administrador' : 'Usuário'}</p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Change Password */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lock className="h-5 w-5" />
-            Change Password
-          </CardTitle>
-          <CardDescription>Update your password</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="current-password">Current Password</Label>
-            <div className="relative">
-              <Input
-                id="current-password"
-                type={showCurrentPassword ? 'text' : 'password'}
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                className="pr-10"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-              >
-                {showCurrentPassword ? (
-                  <EyeOff className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                )}
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="new-password">New Password</Label>
-            <div className="relative">
-              <Input
-                id="new-password"
-                type={showNewPassword ? 'text' : 'password'}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="pr-10"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                onClick={() => setShowNewPassword(!showNewPassword)}
-              >
-                {showNewPassword ? (
-                  <EyeOff className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                )}
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirm-password">Confirm New Password</Label>
-            <div className="relative">
-              <Input
-                id="confirm-password"
-                type={showConfirmPassword ? 'text' : 'password'}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="pr-10"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              >
-                {showConfirmPassword ? (
-                  <EyeOff className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                )}
-              </Button>
-            </div>
-          </div>
-          <Button
-            onClick={handleChangePassword}
-            disabled={changePasswordMutation.isPending || !currentPassword || !newPassword}
-          >
-            Change Password
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* MFA Settings */}
+      {/* Security */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
-            Two-Factor Authentication
+            Segurança
           </CardTitle>
-          <CardDescription>
-            {user?.mfa_enabled
-              ? 'MFA is enabled on your account'
-              : user?.mfa_required
-              ? 'MFA is required for your account'
-              : 'Add an extra layer of security'}
-          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {user?.mfa_enabled ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-success">
-                <Shield className="h-5 w-5" />
-                <span>MFA is enabled</span>
+        <CardContent>
+          <div className="divide-y divide-border">
+            {/* Row A — Two-Factor Authentication */}
+            <div className="flex items-center justify-between gap-4 py-4 first:pt-0">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium">Autenticação de dois fatores</p>
+                  <p className="text-sm text-muted-foreground">
+                    {user?.mfa_enabled
+                      ? 'Ativado'
+                      : user?.mfa_required
+                      ? 'MFA obrigatório para a sua conta'
+                      : 'Adicione uma camada extra de segurança'}
+                  </p>
+                </div>
               </div>
-              {user?.mfa_required && (
-                <p className="text-sm text-warning">
-                  MFA is required for your account and cannot be disabled.
-                </p>
-              )}
-              {!user?.mfa_required && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="disable-password">Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="disable-password"
-                        type={showCurrentPassword ? 'text' : 'password'}
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        className="pr-10"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                      >
-                        {showCurrentPassword ? (
-                          <EyeOff className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="disable-mfa-code">MFA Code</Label>
-                    <Input
-                      id="disable-mfa-code"
-                      type="text"
-                      maxLength={6}
-                      value={disableMfaCode}
-                      onChange={(e) => setDisableMfaCode(e.target.value.replace(/\D/g, ''))}
-                      placeholder="000000"
-                      className="w-32 font-mono"
-                    />
-                  </div>
-                  <Button
-                    variant="destructive"
-                    onClick={() => disableMfaMutation.mutate()}
-                    disabled={disableMfaMutation.isPending || !currentPassword || disableMfaCode.length !== 6}
-                  >
-                    Disable MFA
-                  </Button>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {!qrCode ? (
-                <Button onClick={() => setupMfaMutation.mutate()} disabled={setupMfaMutation.isPending}>
-                  <Key className="h-4 w-4 mr-2" />
-                  Setup MFA
+              {user?.mfa_enabled ? (
+                <Button variant="outline" onClick={() => setShowMfa(!showMfa)}>
+                  Gerenciar
                 </Button>
               ) : (
-                <div className="space-y-6">
-                  {/* QR Code Section */}
-                  <div className="space-y-3">
-                    <Label className="text-base font-semibold">1. Scan QR Code</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)
-                    </p>
-                    <div className="flex justify-center p-4 bg-white rounded-lg">
-                      <img
-                        src={qrCode}
-                        alt="MFA QR Code"
-                        className="w-48 h-48"
-                      />
-                    </div>
-                  </div>
+                <Button onClick={() => setShowMfa(!showMfa)}>
+                  Configurar MFA
+                </Button>
+              )}
+            </div>
 
-                  {/* Backup Codes Section */}
-                  {backupCodes.length > 0 && (
-                    <div className="space-y-3">
-                      <Label className="text-base font-semibold">2. Save Backup Codes</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Save these backup codes in a safe place. Each code can only be used once.
-                      </p>
-                      <div className="bg-muted p-4 rounded-lg font-mono text-sm">
-                        <div className="grid grid-cols-2 gap-2">
-                          {backupCodes.map((code, i) => (
-                            <span key={i} className="text-center">{code}</span>
-                          ))}
+            {/* Row B — Password */}
+            <div className="flex items-center justify-between gap-4 py-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Lock className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium">Senha</p>
+                  <p className="text-sm text-muted-foreground">Altere sua senha periodicamente</p>
+                </div>
+              </div>
+              <Button variant="outline" onClick={() => setShowPasswordForm(!showPasswordForm)}>
+                Alterar senha
+              </Button>
+            </div>
+          </div>
+
+          {/* MFA form (toggle) */}
+          {showMfa && (
+            <div className="mt-6 border-t border-border pt-6 space-y-4">
+              {user?.mfa_enabled ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-success">
+                    <Shield className="h-5 w-5" />
+                    <span>MFA está ativado</span>
+                  </div>
+                  {user?.mfa_required && (
+                    <p className="text-sm text-warning">
+                      O MFA é obrigatório para a sua conta e não pode ser desativado.
+                    </p>
+                  )}
+                  {!user?.mfa_required && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="disable-password">Senha</Label>
+                        <div className="relative">
+                          <Input
+                            id="disable-password"
+                            type={showCurrentPassword ? 'text' : 'password'}
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            className="pr-10"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          >
+                            {showCurrentPassword ? (
+                              <EyeOff className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <Eye className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </Button>
                         </div>
                       </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="disable-mfa-code">Código MFA</Label>
+                        <Input
+                          id="disable-mfa-code"
+                          type="text"
+                          maxLength={6}
+                          value={disableMfaCode}
+                          onChange={(e) => setDisableMfaCode(e.target.value.replace(/\D/g, ''))}
+                          placeholder="000000"
+                          className="w-32 font-mono"
+                        />
+                      </div>
                       <Button
-                        variant="outline"
-                        size="sm"
+                        variant="destructive"
+                        onClick={() => disableMfaMutation.mutate()}
+                        disabled={disableMfaMutation.isPending || !currentPassword || disableMfaCode.length !== 6}
+                      >
+                        Desativar MFA
+                      </Button>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {!qrCode ? (
+                    <Button onClick={() => setupMfaMutation.mutate()} disabled={setupMfaMutation.isPending}>
+                      <Key className="h-4 w-4 mr-2" />
+                      Configurar MFA
+                    </Button>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* QR Code Section */}
+                      <div className="space-y-3">
+                        <Label className="text-base font-semibold">1. Escaneie o QR Code</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Escaneie este QR code com seu aplicativo autenticador (Google Authenticator, Authy, etc.)
+                        </p>
+                        <div className="flex justify-center p-4 bg-white rounded-lg">
+                          <img
+                            src={qrCode}
+                            alt="MFA QR Code"
+                            className="w-48 h-48"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Backup Codes Section */}
+                      {backupCodes.length > 0 && (
+                        <div className="space-y-3">
+                          <Label className="text-base font-semibold">2. Salve os códigos de backup</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Guarde estes códigos de backup em um lugar seguro. Cada código só pode ser usado uma vez.
+                          </p>
+                          <div className="bg-muted p-4 rounded-lg font-mono text-sm">
+                            <div className="grid grid-cols-2 gap-2">
+                              {backupCodes.map((code, i) => (
+                                <span key={i} className="text-center">{code}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(backupCodes.join('\n'))
+                              setCopiedCodes(true)
+                              setTimeout(() => setCopiedCodes(false), 2000)
+                            }}
+                          >
+                            {copiedCodes ? (
+                              <>
+                                <Check className="h-4 w-4 mr-2" />
+                                Copiado!
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-4 w-4 mr-2" />
+                                Copiar códigos
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Verification Section */}
+                      <div className="space-y-3">
+                        <Label className="text-base font-semibold">3. Verifique a configuração</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Digite o código de 6 dígitos do seu aplicativo autenticador para verificar a configuração.
+                        </p>
+                        <div className="flex gap-2">
+                          <Input
+                            id="mfa-code"
+                            type="text"
+                            maxLength={6}
+                            value={mfaCode}
+                            onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                            placeholder="000000"
+                            className="w-32 text-center font-mono text-lg"
+                          />
+                          <Button
+                            onClick={() => verifyMfaMutation.mutate()}
+                            disabled={verifyMfaMutation.isPending || mfaCode.length !== 6}
+                          >
+                            Verificar e ativar
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Cancel Button */}
+                      <Button
+                        variant="ghost"
                         onClick={() => {
-                          navigator.clipboard.writeText(backupCodes.join('\n'))
-                          setCopiedCodes(true)
-                          setTimeout(() => setCopiedCodes(false), 2000)
+                          setQrCode(null)
+                          setBackupCodes([])
+                          setMfaCode('')
                         }}
                       >
-                        {copiedCodes ? (
-                          <>
-                            <Check className="h-4 w-4 mr-2" />
-                            Copied!
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-4 w-4 mr-2" />
-                            Copy Codes
-                          </>
-                        )}
+                        Cancelar configuração
                       </Button>
                     </div>
                   )}
-
-                  {/* Verification Section */}
-                  <div className="space-y-3">
-                    <Label className="text-base font-semibold">3. Verify Setup</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Enter the 6-digit code from your authenticator app to verify setup.
-                    </p>
-                    <div className="flex gap-2">
-                      <Input
-                        id="mfa-code"
-                        type="text"
-                        maxLength={6}
-                        value={mfaCode}
-                        onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
-                        placeholder="000000"
-                        className="w-32 text-center font-mono text-lg"
-                      />
-                      <Button
-                        onClick={() => verifyMfaMutation.mutate()}
-                        disabled={verifyMfaMutation.isPending || mfaCode.length !== 6}
-                      >
-                        Verify and Enable
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Cancel Button */}
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setQrCode(null)
-                      setBackupCodes([])
-                      setMfaCode('')
-                    }}
-                  >
-                    Cancel Setup
-                  </Button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Password form (toggle) */}
+          {showPasswordForm && (
+            <div className="mt-6 border-t border-border pt-6 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="current-password">Senha atual</Label>
+                <div className="relative">
+                  <Input
+                    id="current-password"
+                    type={showCurrentPassword ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  >
+                    {showCurrentPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-password">Nova senha</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                  >
+                    {showNewPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirmar nova senha</Label>
+                <div className="relative">
+                  <Input
+                    id="confirm-password"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <Button
+                onClick={handleChangePassword}
+                disabled={changePasswordMutation.isPending || !currentPassword || !newPassword}
+              >
+                Alterar senha
+              </Button>
             </div>
           )}
         </CardContent>
@@ -569,6 +610,76 @@ export default function SettingsPage() {
       )}
 
       {/* System & Updates (admin only) */}
+      {/* Logs & Auditoria (admin only) */}
+      {user?.is_admin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ScrollText className="h-5 w-5" /> Logs & Auditoria</CardTitle>
+            <CardDescription>Retenção e o que registrar (prévia — ainda não persistido)</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="font-medium text-foreground">Registro de eventos</p>
+                <p className="text-sm text-muted-foreground">Login, VPN, alterações de configuração, sistema…</p>
+              </div>
+              <Link to="/audit"><Button variant="outline" size="sm">Abrir Auditoria</Button></Link>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Retenção dos logs</Label>
+              <select
+                value={logRetention}
+                onChange={(e) => setLogRetention(e.target.value)}
+                className="h-9 w-full max-w-xs rounded-lg border border-border bg-secondary/40 px-3 text-sm text-foreground focus:border-primary/50 focus:outline-none"
+              >
+                <option value="30">30 dias</option>
+                <option value="60">60 dias</option>
+                <option value="90">90 dias</option>
+                <option value="180">180 dias</option>
+                <option value="365">1 ano</option>
+              </select>
+              <p className="text-xs text-muted-foreground">Eventos mais antigos que isso são removidos automaticamente.</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Categorias registradas</Label>
+              <div className="flex flex-wrap gap-2">
+                {([['auth', 'Autenticação'], ['vpn', 'OpenVPN'], ['config', 'Configuração'], ['system', 'Sistema'], ['users', 'Usuários']] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setLogCats((c) => ({ ...c, [key]: !c[key] }))}
+                    className={`rounded-full border px-3 py-1 text-sm transition-colors ${logCats[key] ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Severidade mínima</Label>
+              <select
+                value={logMinSev}
+                onChange={(e) => setLogMinSev(e.target.value)}
+                className="h-9 w-full max-w-xs rounded-lg border border-border bg-secondary/40 px-3 text-sm text-foreground focus:border-primary/50 focus:outline-none"
+              >
+                <option value="info">Info (tudo)</option>
+                <option value="warning">Atenção e acima</option>
+                <option value="error">Somente erros/críticos</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end border-t border-border pt-4">
+              <Button onClick={() => toast({ title: 'Configuração salva (prévia)', description: 'A persistência entra quando ligarmos a auditoria no backend.' })}>
+                <Save className="mr-2 h-4 w-4" /> Salvar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {user?.is_admin && <SystemUpdateCard />}
     </div>
   )

@@ -347,12 +347,11 @@ export default function UsersPage() {
                       <td className="px-4 py-3">
                         {user.user_type === 'service' ? (
                           <span className="text-muted-foreground">N/A</span>
-                        ) : user.mfa_enabled ? (
-                          <span className="text-success">Ativado</span>
-                        ) : user.mfa_required ? (
-                          <span className="text-warning">Obrigatório</span>
                         ) : (
-                          <span className="text-muted-foreground">Desativado</span>
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${user.mfa_enabled ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${user.mfa_enabled ? 'bg-success' : 'bg-destructive'}`} />
+                            {user.mfa_enabled ? 'Habilitado' : 'Desabilitado'}
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">

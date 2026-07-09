@@ -13,6 +13,7 @@ import ConnectionsPage from '@/pages/ConnectionsPage'
 import SettingsPage from '@/pages/SettingsPage'
 import IPsecPage from '@/pages/IPsecPage'
 import ReverseProxyPage from '@/pages/ReverseProxyPage'
+import AuditPage from '@/pages/AuditPage'
 
 // Layout
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -81,6 +82,7 @@ function App() {
           <Route path="ipsec" element={<AdminRoute><IPsecPage /></AdminRoute>} />
           <Route path="proxy" element={<AdminRoute><ReverseProxyPage /></AdminRoute>} />
           <Route path="connections" element={<AdminRoute><ConnectionsPage /></AdminRoute>} />
+          <Route path="audit" element={<AdminRoute><AuditPage /></AdminRoute>} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
 

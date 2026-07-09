@@ -6,6 +6,7 @@ import {
   Globe,
   Network,
   Activity,
+  ScrollText,
   Settings,
   type LucideIcon,
 } from 'lucide-react'
@@ -26,5 +27,6 @@ export const navigation: NavItem[] = [
   { name: 'Proxy Reverso', href: '/proxy', icon: Globe, adminOnly: true, keywords: 'reverse proxy traefik dominio certificado' },
   { name: 'Firewall', href: '/firewall', icon: Network, adminOnly: true, keywords: 'regras rules rede interna' },
   { name: 'Conexões', href: '/connections', icon: Activity, adminOnly: true, keywords: 'connections clientes sessoes ativas' },
+  { name: 'Auditoria', href: '/audit', icon: ScrollText, adminOnly: true, keywords: 'audit logs eventos historico login' },
   { name: 'Configurações', href: '/settings', icon: Settings, adminOnly: false, keywords: 'settings conta senha mfa dominio' },
 ]
