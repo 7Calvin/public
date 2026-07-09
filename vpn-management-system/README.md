@@ -562,6 +562,47 @@ docker-compose exec postgres psql -U vpn_admin vpn_management  # SQL
 
 ---
 
+## Releases & Deploy
+
+O deploy é feito pelo **update-agent** (roda no host), que faz `git pull` da
+**última tag** e roda o `update.sh` (builda antes de trocar, health-check e
+rollback automático, preservando certificados/PKI). Ou seja: para publicar uma
+nova versão, basta **criar uma tag** e disparar a atualização pelo painel.
+
+### 1. Cortar uma release (bump + commit + tag + push)
+
+Um único comando cuida de tudo — inclusive empurrar a **tag** junto (sem isso o
+painel não enxerga a atualização):
+
+```powershell
+# Windows / PowerShell
+.\scripts\release.ps1 patch      # 1.2.0 -> 1.2.1
+.\scripts\release.ps1 minor      # 1.2.0 -> 1.3.0
+.\scripts\release.ps1 major      # 1.2.0 -> 2.0.0
+.\scripts\release.ps1 1.4.0      # versão explícita
+.\scripts\release.ps1 patch -DryRun   # simula, não altera nada
+```
+
+```bash
+# Linux / macOS / git-bash
+./scripts/release.sh patch|minor|major|X.Y.Z
+DRY_RUN=1 ./scripts/release.sh patch  # simula
+```
+
+O script: valida (branch `main`, working tree limpo, tag inédita), escreve o
+`VERSION`, commita `chore: release vX.Y.Z`, cria a tag anotada e faz
+`git push origin main <tag>`.
+
+> Semver: correções → `patch`; features novas → `minor`; mudanças grandes /
+> rebrand → `major`.
+
+### 2. Deployar
+
+Painel → **Configurações → Sistema** → **verificar atualizações** → a nova
+versão aparece → **atualizar**. O update-agent builda e troca com health-check.
+
+---
+
 ## Segurança
 
 - Nunca commite o arquivo `.env`
