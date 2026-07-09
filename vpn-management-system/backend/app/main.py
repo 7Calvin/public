@@ -234,9 +234,18 @@ async def startup_event():
                 try:
                     async with AsyncSessionLocal() as db:
                         svc = ConnectionService(db)
-                        await svc.record_bandwidth_sample()
-                        await svc.prune_bandwidth_samples(retention_hours)
-                        await db.commit()
+                        # One management-interface round-trip feeds both the
+                        # throughput sample and the connection reconciliation.
+                        ok, live = await svc.get_live_status()
+                        if not ok:
+                            logger.warning("Bandwidth sampler: live status query failed; skipping this round")
+                        else:
+                            await svc.record_bandwidth_sample(live=live)
+                            reconciled = await svc.reconcile_active_connections(live)
+                            await svc.prune_bandwidth_samples(retention_hours)
+                            await db.commit()
+                            if reconciled:
+                                logger.info(f"Reconciled {reconciled} stale connection(s) not present in OpenVPN")
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"Bandwidth sample loop error: {e}")
                 await asyncio.sleep(interval)

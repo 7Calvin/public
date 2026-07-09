@@ -313,7 +313,22 @@ class ConnectionService:
             return False
 
     async def get_live_connections_from_server(self) -> List[dict]:
-        """Get live connection info from OpenVPN server"""
+        """Get live connection info from OpenVPN server.
+
+        Returns an empty list on failure (kept for backward compatibility).
+        Callers that must distinguish "no clients connected" from "the query
+        failed" should use get_live_status() instead.
+        """
+        _ok, connections = await self.get_live_status()
+        return connections
+
+    async def get_live_status(self) -> Tuple[bool, List[dict]]:
+        """Query the OpenVPN management interface for the live client list.
+
+        Returns (ok, connections). ok=False means the query itself failed — the
+        caller MUST NOT treat that as "nobody is connected" (reconciliation would
+        otherwise wrongly disconnect every client during a transient glitch).
+        """
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
@@ -335,11 +350,11 @@ class ConnectionService:
 
             sock.close()
 
-            return self._parse_status_response(response.decode())
+            return True, self._parse_status_response(response.decode())
 
         except Exception as e:
             logger.error(f"Failed to get live connections: {e}")
-            return []
+            return False, []
 
     def _parse_status_response(self, response: str) -> List[dict]:
         """Parse OpenVPN status response"""
@@ -526,14 +541,16 @@ class ConnectionService:
 
     # ==================== Bandwidth Time-Series ====================
 
-    async def record_bandwidth_sample(self) -> BandwidthSample:
+    async def record_bandwidth_sample(self, live: Optional[List[dict]] = None) -> BandwidthSample:
         """Snapshot current server-wide cumulative byte counters from OpenVPN.
 
-        Reads the live per-client counters from the management interface and
-        stores their sum as one time-series row. Throughput for an interval is
-        later computed as the delta between two consecutive snapshots.
+        Sums the live per-client counters from the management interface and
+        stores them as one time-series row. Throughput for an interval is later
+        computed as the delta between two consecutive snapshots. Pass ``live``
+        to reuse an already-fetched status list (avoids a second round-trip).
         """
-        live = await self.get_live_connections_from_server()
+        if live is None:
+            live = await self.get_live_connections_from_server()
         cum_sent = sum(int(c.get("bytes_sent") or 0) for c in live)
         cum_received = sum(int(c.get("bytes_received") or 0) for c in live)
 
@@ -552,6 +569,50 @@ class ConnectionService:
             delete(BandwidthSample).where(BandwidthSample.recorded_at < cutoff)
         )
         return result.rowcount or 0
+
+    async def reconcile_active_connections(
+        self,
+        live: List[dict],
+        grace_seconds: int = 120,
+    ) -> int:
+        """Close DB connections no longer present in OpenVPN's live client list.
+
+        Reconciles state after events that bypass the client-disconnect hook —
+        most notably an OpenVPN restart (a deploy/update), which tears down every
+        tunnel without firing per-client disconnect callbacks, leaving rows stuck
+        as ACTIVE. ``live`` MUST come from a SUCCESSFUL management query (see
+        get_live_status); passing the result of a failed query would wrongly
+        disconnect everyone. A grace window skips very fresh rows so we don't race
+        a client that just connected but hasn't appeared in the status list yet.
+
+        Returns the number of connections reconciled. Does not commit.
+        """
+        live_usernames = {lc["common_name"] for lc in live}
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=grace_seconds)
+
+        result = await self.db.execute(
+            select(Connection)
+            .options(selectinload(Connection.user))
+            .where(Connection.status == ConnectionStatus.ACTIVE)
+        )
+        db_active = result.scalars().all()
+
+        count = 0
+        for conn in db_active:
+            connected = conn.connected_at
+            if connected is not None and connected.tzinfo is None:
+                connected = connected.replace(tzinfo=timezone.utc)
+            if connected is not None and connected > cutoff:
+                continue  # too fresh — avoid racing the connect hook
+            username = conn.user.username if conn.user else None
+            if username and username not in live_usernames:
+                conn.status = ConnectionStatus.DISCONNECTED
+                conn.disconnected_at = datetime.now(timezone.utc)
+                conn.disconnect_reason = "Reconciled: not present in OpenVPN"
+                count += 1
+                logger.info(f"Reconciled stale connection for user {username}")
+
+        return count
 
     async def get_throughput(self, window: str = "24h") -> dict:
         """Build the throughput time-series for the dashboard chart.
