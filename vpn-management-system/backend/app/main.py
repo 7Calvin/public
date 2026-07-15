@@ -259,6 +259,58 @@ async def startup_event():
     if getattr(settings, "BANDWIDTH_SAMPLING_ENABLED", True):
         asyncio.create_task(_bandwidth_sample_loop())
 
+    # Background IPsec status reconciler: refresh each connection's persisted
+    # status from the real StrongSwan state on an interval. Without this, a
+    # connection stays latched at whatever status was written last — e.g. an
+    # "error" recorded because `ipsec up` ran during a StrongSwan restart window
+    # ("charon is not running") — even after the tunnel comes up on its own via
+    # auto=start. Status was otherwise only refreshed on a manual "Sync" click.
+    # Same advisory-lock pattern as the sampler: exactly one process reconciles.
+    async def _ipsec_status_sync_loop():
+        from sqlalchemy import text
+        from app.services.ipsec_service import IPsecService
+
+        interval = getattr(settings, "IPSEC_STATUS_SYNC_INTERVAL_SECONDS", 20)
+        LOCK_KEY = 4823171  # distinct from the bandwidth sampler's lock id
+
+        lock_conn = await engine.connect()
+        try:
+            got = (await lock_conn.execute(
+                text("SELECT pg_try_advisory_lock(:k)"), {"k": LOCK_KEY}
+            )).scalar()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"IPsec status sync: could not acquire lock: {e}")
+            await lock_conn.close()
+            return
+
+        if not got:
+            logger.info("IPsec status sync: another worker holds the lock; not syncing here")
+            await lock_conn.close()
+            return
+
+        # Session-level advisory locks survive COMMIT, so close the acquiring
+        # transaction to avoid leaving the connection idle-in-transaction.
+        await lock_conn.commit()
+
+        logger.info(f"IPsec status sync started (interval={interval}s)")
+        try:
+            while True:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await IPsecService(db).update_connection_statuses()
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"IPsec status sync loop error: {e}")
+                await asyncio.sleep(interval)
+        finally:
+            try:
+                await lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOCK_KEY})
+            except Exception:  # noqa: BLE001
+                pass
+            await lock_conn.close()
+
+    if getattr(settings, "IPSEC_STATUS_SYNC_ENABLED", True):
+        asyncio.create_task(_ipsec_status_sync_loop())
+
     # Note: Firewall rules are saved in database and applied by NAT agent
     # The backend does not directly modify iptables (requires privileged container)
 

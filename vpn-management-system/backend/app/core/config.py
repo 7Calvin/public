@@ -197,6 +197,14 @@ class Settings(BaseSettings):
     BANDWIDTH_SAMPLE_INTERVAL_SECONDS: int = 300  # sample every 5 min
     BANDWIDTH_RETENTION_HOURS: int = 48  # keep ~2 days of samples
 
+    # ==================== IPsec Status Sync ====================
+    # Background reconciler that refreshes each IPsec connection's persisted
+    # status from the real StrongSwan state. Without it, a connection can stay
+    # latched as "error" after a daemon restart even though the tunnel is up,
+    # because status is otherwise only refreshed on a manual "Sync" click.
+    IPSEC_STATUS_SYNC_ENABLED: bool = True
+    IPSEC_STATUS_SYNC_INTERVAL_SECONDS: int = 20  # reconcile every 20s
+
     # ==================== Rate Limiting ====================
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
