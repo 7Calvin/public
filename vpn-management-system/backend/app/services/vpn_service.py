@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, delete
 
 from app.models.user import User
 from app.models.vpn_profile import VPNProfile, AuthMethod
@@ -397,6 +397,68 @@ class VPNService:
 
         return None
 
+    async def change_vpn_network(self, new_network: str, new_netmask: str) -> Tuple[bool, Optional[str]]:
+        """Change the VPN subnet: reassign every profile's IP, rewrite ccd, and
+        restart OpenVPN so the new `server <net> <mask>` takes effect.
+
+        DISRUPTIVE: drops all live sessions and changes every client's tunnel IP.
+        Clients do NOT need a new .ovpn (the IP is server-pushed via ccd) but must
+        reconnect.
+        """
+        import ipaddress
+
+        try:
+            net = ipaddress.ip_network(f"{new_network}/{new_netmask}", strict=False)
+        except Exception as e:
+            return False, f"Rede/máscara inválida: {e}"
+        if net.version != 4:
+            return False, "Apenas IPv4 é suportado"
+        if net.num_addresses < 4:
+            return False, "Subrede pequena demais"
+
+        network_addr = str(net.network_address)
+
+        # 1. Persist to the backend-managed config (source of truth for IP alloc).
+        cfg = get_server_config()
+        cfg["vpn_network"] = network_addr
+        cfg["vpn_netmask"] = new_netmask
+        if not save_server_config(cfg):
+            return False, "Falha ao salvar a configuração"
+
+        # 2. Write the network file the OpenVPN container's start.sh reads on boot
+        #    (shared /etc/openvpn volume) so a restart applies the new subnet.
+        try:
+            net_env = Path(settings.OPENVPN_CONFIG_DIR) / "network.env"
+            net_env.write_text(f"OPENVPN_NETWORK={network_addr}\nOPENVPN_NETMASK={new_netmask}\n")
+        except Exception as e:
+            return False, f"Falha ao escrever network.env: {e}"
+
+        # 3. Old pool entries belong to the previous subnet — clear them.
+        await self.db.execute(delete(IPPool))
+
+        # 4. Reassign each profile a fresh IP in the new range and rewrite its ccd.
+        hosts = list(net.hosts())[1:]  # skip the gateway (.1)
+        result = await self.db.execute(
+            select(VPNProfile, User.username)
+            .join(User, User.id == VPNProfile.user_id)
+            .where(VPNProfile.is_revoked == False)
+            .order_by(VPNProfile.created_at.asc())
+        )
+        rows = result.all()
+        if len(rows) > len(hosts):
+            return False, f"A subrede comporta {len(hosts)} IPs, mas há {len(rows)} perfis"
+
+        for (profile, username), host in zip(rows, hosts):
+            profile.assigned_ip = str(host)
+            await self._create_ccd_file(username, profile)
+        await self.db.commit()
+
+        # 5. Restart the container so start.sh regenerates server.conf + masquerade.
+        ok, err = await self.restart_server()
+        if not ok:
+            return False, f"Rede salva, mas falha ao reiniciar o OpenVPN: {err}"
+        return True, None
+
     async def _generate_certificates(self, common_name: str) -> dict:
         """
         Generate client certificates using EasyRSA.
@@ -556,7 +618,7 @@ G4AZmjLbG+8UYeKnGr4kMzYrq4rFjLVlzA==
 
             lines = [
                 f"# CCD for {username}",
-                f"ifconfig-push {profile.assigned_ip} {settings.OPENVPN_NETMASK}",
+                f"ifconfig-push {profile.assigned_ip} {get_server_config().get('vpn_netmask', settings.OPENVPN_NETMASK)}",
             ]
 
             # Add push routes

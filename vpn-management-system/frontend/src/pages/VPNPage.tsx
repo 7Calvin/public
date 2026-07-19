@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
 import { formatBytes } from '@/lib/utils'
-import { Download, RefreshCw, Shield, ShieldOff, Server, Settings, Save, Plus, X } from 'lucide-react'
+import { Download, RefreshCw, Shield, ShieldOff, Server, Settings, Save, Plus, X, AlertTriangle, Pencil } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import type { VPNServerConfig } from '@/types'
 
 export default function VPNPage() {
@@ -105,6 +106,25 @@ export default function VPNPage() {
     },
     onError: (error: any) => {
       toast({ variant: 'destructive', title: 'Failed to restart server', description: error.response?.data?.detail })
+    },
+  })
+
+  const [confirmNetChange, setConfirmNetChange] = useState(false)
+  const [netForm, setNetForm] = useState({ vpn_network: '', vpn_netmask: '' })
+  const openNetModal = () => {
+    setNetForm({ vpn_network: configForm.vpn_network || '', vpn_netmask: configForm.vpn_netmask || '' })
+    setConfirmNetChange(true)
+  }
+  const changeNetMutation = useMutation({
+    mutationFn: (data: { vpn_network: string; vpn_netmask: string }) => vpnApi.changeNetwork(data),
+    onSuccess: (res: any) => {
+      setConfirmNetChange(false)
+      queryClient.invalidateQueries({ queryKey: ['vpn-server-config'] })
+      queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
+      toast({ title: 'Rede da VPN alterada', description: res?.data?.message })
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Falha ao alterar a rede', description: error?.response?.data?.detail })
     },
   })
 
@@ -322,7 +342,7 @@ export default function VPNPage() {
                       id="server_host"
                       value={configForm.server_host || ''}
                       onChange={(e) => setConfigForm({ ...configForm, server_host: e.target.value })}
-                      placeholder="vpn.example.com"
+                      placeholder="vpn.calvin.local"
                     />
                   </div>
                   <div className="space-y-2">
@@ -352,23 +372,21 @@ export default function VPNPage() {
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="vpn_network">VPN Network</Label>
-                    <Input
-                      id="vpn_network"
-                      value={configForm.vpn_network || ''}
-                      onChange={(e) => setConfigForm({ ...configForm, vpn_network: e.target.value })}
-                      disabled={!serverConfig?.network_editable}
-                      className={!serverConfig?.network_editable ? 'bg-muted' : ''}
-                    />
+                    <div className="relative">
+                      <Input id="vpn_network" value={configForm.vpn_network || ''} readOnly className="bg-muted pr-10 font-mono" />
+                      <button
+                        type="button"
+                        onClick={openNetModal}
+                        title="Alterar rede da VPN"
+                        className="absolute right-0 top-0 flex h-full items-center px-3 text-muted-foreground transition-colors hover:text-warning"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="vpn_netmask">Netmask</Label>
-                    <Input
-                      id="vpn_netmask"
-                      value={configForm.vpn_netmask || ''}
-                      onChange={(e) => setConfigForm({ ...configForm, vpn_netmask: e.target.value })}
-                      disabled={!serverConfig?.network_editable}
-                      className={!serverConfig?.network_editable ? 'bg-muted' : ''}
-                    />
+                    <Input id="vpn_netmask" value={configForm.vpn_netmask || ''} readOnly className="bg-muted font-mono" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="max_clients">Max Clients</Label>
@@ -380,9 +398,6 @@ export default function VPNPage() {
                     />
                   </div>
                 </div>
-                {!serverConfig?.network_editable && (
-                  <p className="text-xs text-warning">Rede bloqueada após criar perfis VPN</p>
-                )}
 
                 {/* Redirect Gateway Toggle */}
                 <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg">
@@ -488,7 +503,7 @@ export default function VPNPage() {
                     </div>
                     <div className="flex gap-2">
                       <Input
-                        placeholder="numerama.local"
+                        placeholder="calvin.local"
                         value={newSplitDomain}
                         onChange={(e) => setNewSplitDomain(e.target.value)}
                         onKeyDown={(e) => {
@@ -555,6 +570,52 @@ export default function VPNPage() {
         </Card>
       )}
 
+      {/* VPN network change — big warning */}
+      <Dialog open={confirmNetChange} onOpenChange={setConfirmNetChange}>
+        <DialogContent onClose={() => setConfirmNetChange(false)}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-warning"><AlertTriangle className="h-5 w-5" /> Alterar a rede da VPN</DialogTitle>
+            <DialogDescription>
+              Rede atual:{' '}
+              <span className="font-mono text-foreground">{configForm.vpn_network}/{configForm.vpn_netmask}</span>. Defina a nova subrede abaixo.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="net-new">VPN Network</Label>
+              <Input id="net-new" value={netForm.vpn_network} onChange={(e) => setNetForm({ ...netForm, vpn_network: e.target.value })} className="font-mono" placeholder="10.9.0.0" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="mask-new">Netmask</Label>
+              <Input id="mask-new" value={netForm.vpn_netmask} onChange={(e) => setNetForm({ ...netForm, vpn_netmask: e.target.value })} className="font-mono" placeholder="255.255.255.0" />
+            </div>
+          </div>
+
+          <div className="my-2 space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+            <p className="font-medium text-warning">Operação disruptiva — leia antes:</p>
+            <ul className="space-y-1.5 text-foreground">
+              <li className="flex gap-2"><span className="text-warning">•</span> O OpenVPN <span className="font-medium">reinicia</span> e todas as sessões ativas caem.</li>
+              <li className="flex gap-2"><span className="text-warning">•</span> O <span className="font-medium">IP de VPN de todos os clientes muda</span> (reatribuído na nova subrede).</li>
+              <li className="flex gap-2"><span className="text-warning">•</span> Regras de firewall/rotas que citam a subrede antiga podem precisar de revisão.</li>
+              <li className="flex gap-2"><span className="text-success">•</span> Clientes <span className="font-medium">não</span> precisam baixar o .ovpn de novo — só reconectar.</li>
+            </ul>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmNetChange(false)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              onClick={() => changeNetMutation.mutate(netForm)}
+              disabled={changeNetMutation.isPending || !netForm.vpn_network || !netForm.vpn_netmask}
+              className="gap-2"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              {changeNetMutation.isPending ? 'Alterando…' : 'Alterar rede'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

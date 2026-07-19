@@ -391,7 +391,7 @@ async def disconnect_vpn_client(
 
 # ==================== Server Configuration Routes ====================
 
-from app.schemas.vpn import VPNServerConfig, VPNServerConfigUpdate
+from app.schemas.vpn import VPNServerConfig, VPNServerConfigUpdate, VPNNetworkChangeRequest
 
 # get_server_config / save_server_config are imported from app.services.vpn_service
 # (single source of truth — see the import at the top of this module).
@@ -516,6 +516,30 @@ async def update_vpn_server_config(
 
     current_config["network_editable"] = not profiles_exist
     return VPNServerConfig(**current_config)
+
+
+@router.put("/server/network", response_model=MessageResponse)
+async def change_vpn_network_endpoint(
+    data: VPNNetworkChangeRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the VPN subnet (DISRUPTIVE).
+
+    Reassigns every client's tunnel IP, rewrites their ccd, and restarts OpenVPN.
+    Allowed even after profiles exist — unlike the plain config update, which
+    locks the network once profiles are created.
+    """
+    vpn_service = VPNService(db)
+    ok, error = await vpn_service.change_vpn_network(data.vpn_network, data.vpn_netmask)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error or "Falha ao alterar a rede da VPN",
+        )
+    return MessageResponse(
+        message=f"Rede da VPN alterada para {data.vpn_network}/{data.vpn_netmask}. Os clientes precisam reconectar."
+    )
 
 
 # ==================== OpenVPN Integration Routes ====================

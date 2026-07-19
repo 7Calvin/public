@@ -235,6 +235,30 @@ class VPNServerConfig(BaseModel):
         return v
 
 
+class VPNNetworkChangeRequest(BaseModel):
+    """Disruptive VPN subnet change (reassigns every client IP + restarts OpenVPN)."""
+    vpn_network: str
+    vpn_netmask: str
+
+    @field_validator("vpn_network")
+    @classmethod
+    def _valid_network(cls, v):
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError(f"Endereço de rede inválido: {v}")
+        return v
+
+    @field_validator("vpn_netmask")
+    @classmethod
+    def _valid_netmask(cls, v):
+        try:
+            ipaddress.ip_network(f"0.0.0.0/{v}", strict=False)
+        except ValueError:
+            raise ValueError(f"Máscara inválida: {v}")
+        return v
+
+
 class VPNServerConfigUpdate(BaseModel):
     """VPN Server configuration update (all fields optional)"""
     server_host: Optional[str] = None

@@ -11,6 +11,29 @@ OPENVPN_NETMASK=${OPENVPN_NETMASK:-255.255.255.0}
 OPENVPN_DNS_1=${OPENVPN_DNS_1:-8.8.8.8}
 OPENVPN_DNS_2=${OPENVPN_DNS_2:-1.1.1.1}
 
+# Backend-managed subnet override: when an admin changes the VPN network from the
+# panel, the backend writes this file to the shared /etc/openvpn volume. It takes
+# precedence over the compose env so the subnet can change on a plain container
+# restart (no recreate needed).
+if [ -f /etc/openvpn/network.env ]; then
+    . /etc/openvpn/network.env
+fi
+
+# Derive the CIDR prefix from the dotted netmask (for MASQUERADE / routing).
+netmask_to_cidr() {
+    local mask=$1 bits=0 octet
+    local IFS=.
+    for octet in $mask; do
+        case $octet in
+            255) bits=$((bits+8));; 254) bits=$((bits+7));; 252) bits=$((bits+6));;
+            248) bits=$((bits+5));; 240) bits=$((bits+4));; 224) bits=$((bits+3));;
+            192) bits=$((bits+2));; 128) bits=$((bits+1));; 0) ;; *) echo 24; return;;
+        esac
+    done
+    echo $bits
+}
+OPENVPN_CIDR=$(netmask_to_cidr "${OPENVPN_NETMASK}")
+
 # Network interface (single interface mode)
 PUBLIC_INTERFACE=${PUBLIC_INTERFACE:-eth0}
 
@@ -246,7 +269,7 @@ iptables -A FORWARD -i ${PUBLIC_INTERFACE} -o tun0 -m state --state ESTABLISHED,
 # === NAT (MASQUERADE) ===
 echo "  Setting up MASQUERADE for ${PUBLIC_INTERFACE}..."
 iptables -t nat -F POSTROUTING 2>/dev/null || true
-iptables -t nat -A POSTROUTING -s ${OPENVPN_NETWORK}/24 -o ${PUBLIC_INTERFACE} -j MASQUERADE
+iptables -t nat -A POSTROUTING -s ${OPENVPN_NETWORK}/${OPENVPN_CIDR} -o ${PUBLIC_INTERFACE} -j MASQUERADE
 
 echo "Firewall and NAT configuration complete."
 echo "  - Private networks BLOCKED by default"
