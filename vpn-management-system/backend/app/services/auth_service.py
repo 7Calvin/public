@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 import logging
 
-from app.models.user import User, UserType
+from app.models.user import User, UserType, AuthSource
 from app.core.config import settings
 from app.core.security import (
     verify_password,
@@ -56,17 +56,29 @@ class AuthService:
         )
         user = result.scalar_one_or_none()
 
-        if not user:
-            logger.warning(f"Login attempt for non-existent user: {username}")
-            return None, "Invalid username or password", False
+        # Decide the credential store per user:
+        #   - Known LOCAL account -> verify against the local database (always works,
+        #     independent of AD being enabled or reachable).
+        #   - Unknown user, or an AD-backed account -> verify against Active Directory.
+        local_password_account = (
+            user is not None
+            and user.auth_source == AuthSource.LOCAL
+            and user.password_hash
+        )
 
-        # Verify password (or API key for service accounts)
-        password_valid = verify_password(password, user.password_hash)
-        if not password_valid and user.user_type == UserType.SERVICE and user.api_key_hash:
-            password_valid = hash_api_key(password) == user.api_key_hash
-        if not password_valid:
-            logger.warning(f"Invalid password for user: {username}")
-            return None, "Invalid username or password", False
+        if local_password_account:
+            # Verify password (or API key for service accounts)
+            password_valid = verify_password(password, user.password_hash)
+            if not password_valid and user.user_type == UserType.SERVICE and user.api_key_hash:
+                password_valid = hash_api_key(password) == user.api_key_hash
+            if not password_valid:
+                logger.warning(f"Invalid password for user: {username}")
+                return None, "Invalid username or password", False
+        else:
+            # Active Directory path (unknown user or auth_source == 'ad').
+            user, ad_error = await self._authenticate_ad(username, password, user)
+            if ad_error:
+                return None, ad_error, False
 
         # Check if active
         if not user.is_active:
@@ -99,6 +111,68 @@ class AuthService:
         await self._update_last_login(user, client_ip)
 
         return user, None, False
+
+    async def _authenticate_ad(
+        self,
+        username: str,
+        password: str,
+        existing_user: Optional[User],
+    ) -> Tuple[Optional[User], Optional[str]]:
+        """
+        Authenticate against Active Directory and JIT-provision a local shadow user.
+
+        The shadow user gives connections/quotas/firewall something local to attach
+        to; AD remains the source of truth for password and group membership.
+
+        Returns (user, error): (user, None) on success, (None, message) on failure.
+        """
+        from app.services.ldap_service import LdapService
+
+        ldap = LdapService(self.db)
+        ok, attrs, error = await ldap.authenticate(username, password)
+        if not ok:
+            logger.warning(f"AD auth failed for '{username}': {error}")
+            # Keep the message generic for unknown users; specific hints only help
+            # a configured-but-denied case (e.g. not in group).
+            if existing_user is None and error in (None, "LDAP is not enabled"):
+                return None, "Invalid username or password"
+            return None, error or "Invalid username or password"
+
+        # Success: reuse the existing shadow record or create one now.
+        user = existing_user
+        if user is None:
+            user = await self._provision_ad_user(username, attrs)
+        elif attrs and attrs.get("email") and not user.email:
+            user.email = attrs["email"]
+            await self.db.commit()
+
+        return user, None
+
+    async def _provision_ad_user(self, username: str, attrs: Optional[dict]) -> User:
+        """Create a local shadow user for an AD-authenticated identity (JIT)."""
+        from sqlalchemy.exc import IntegrityError
+
+        user = User(
+            username=username.lower(),
+            email=(attrs or {}).get("email"),
+            password_hash=None,
+            user_type=UserType.HUMAN,
+            auth_source=AuthSource.AD,
+            is_active=True,
+        )
+        self.db.add(user)
+        try:
+            await self.db.commit()
+            await self.db.refresh(user)
+            logger.info(f"JIT-provisioned AD shadow user: {username}")
+            return user
+        except IntegrityError:
+            # Concurrent first login created it first — re-fetch the existing row.
+            await self.db.rollback()
+            result = await self.db.execute(
+                select(User).where(User.username == username.lower())
+            )
+            return result.scalar_one()
 
     def _verify_mfa_or_backup(self, user: User, code: str) -> bool:
         """Verify MFA code or backup code"""

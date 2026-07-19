@@ -226,7 +226,11 @@ export const firewallApi = {
   // Quick rules
   getQuickRules: () => api.get('/firewall/quick-rules'),
 
-  toggleQuickRule: (ruleKey: string) => api.post(`/firewall/quick-rules/${ruleKey}/toggle`),
+  toggleQuickRule: (ruleKey: string, networks?: string[]) =>
+    api.post(`/firewall/quick-rules/${ruleKey}/toggle`, networks ? { networks } : {}),
+
+  setQuickRuleNetworks: (ruleKey: string, networks: string[]) =>
+    api.put(`/firewall/quick-rules/${ruleKey}/networks`, { networks }),
 
   // NAT/DNAT rules
   listNatRules: () => api.get('/firewall/nat'),
@@ -299,6 +303,57 @@ export const adminApi = {
   systemHealth: () => api.get('/admin/system/health'),
 
   systemConfig: () => api.get('/admin/system/config'),
+
+  // LDAP / Active Directory
+  getLdapSettings: () => api.get<LdapSettings>('/admin/ldap-settings'),
+  updateLdapSettings: (data: LdapSettingsUpdate) =>
+    api.put<LdapSettings>('/admin/ldap-settings', data),
+  testLdapSettings: (data: LdapTestRequest) =>
+    api.post<LdapTestResult>('/admin/ldap-settings/test', data),
+}
+
+export interface LdapSettings {
+  enabled: boolean
+  server: string | null
+  port: number
+  use_ntlm: boolean
+  ad_domain: string | null
+  bind_dn: string | null
+  bind_password_set: boolean
+  search_base: string | null
+  user_attr: string
+  required_group_dn: string | null
+  timeout: number
+}
+
+export interface LdapSettingsUpdate {
+  enabled: boolean
+  server?: string | null
+  port: number
+  use_ntlm: boolean
+  ad_domain?: string | null
+  bind_dn?: string | null
+  bind_password?: string | null
+  search_base?: string | null
+  user_attr: string
+  required_group_dn?: string | null
+  timeout: number
+}
+
+export interface LdapTestRequest {
+  server?: string | null
+  port: number
+  use_ntlm: boolean
+  ad_domain?: string | null
+  bind_dn?: string | null
+  bind_password?: string | null
+  search_base?: string | null
+  timeout: number
+}
+
+export interface LdapTestResult {
+  success: boolean
+  message: string | null
 }
 
 // Proxy API (Reverse Proxy / Traefik)

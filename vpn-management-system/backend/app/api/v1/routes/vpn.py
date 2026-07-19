@@ -643,13 +643,14 @@ async def vpn_client_connected(
 
     Records the connection in the database.
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, func
     from app.services.connection_service import ConnectionService
     from app.models.user import User as UserModel
 
-    # Find user
+    # Find user (case-insensitive: usernames are stored lowercased, but OpenVPN's
+    # common_name — and AD's sAMAccountName — may arrive in mixed case).
     result = await db.execute(
-        select(UserModel).where(UserModel.username == data.username)
+        select(UserModel).where(func.lower(UserModel.username) == data.username.lower())
     )
     user = result.scalar_one_or_none()
 
@@ -668,7 +669,8 @@ async def vpn_client_connected(
     connection, error = await connection_service.record_connection(
         user=user,
         vpn_profile=profile,  # Can be None in simplified mode
-        source_ip=data.client_ip
+        source_ip=data.client_ip,
+        vpn_ip=data.vpn_ip,  # OpenVPN-assigned IP; required so disconnect can match AD users
     )
 
     if error:

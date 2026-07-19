@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { formatDateTime } from '@/lib/tz'
-import { Plus, Search, UserCheck, UserX, Key, X, Eye, EyeOff, Server, User as UserIcon, Trash2, Copy, Check, AlertTriangle, ShieldCheck, ShieldOff } from 'lucide-react'
+import { Plus, Search, UserCheck, UserX, Key, X, Eye, EyeOff, Server, User as UserIcon, Trash2, Copy, Check, AlertTriangle, ShieldCheck, ShieldOff, Network } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import type { User } from '@/types'
 
@@ -287,9 +287,19 @@ export default function UsersPage() {
                             )}
                           </div>
                           <div>
-                            <p className="font-medium">{user.username}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium">{user.username}</p>
+                              {user.auth_source === 'ad' && (
+                                <span
+                                  className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-400"
+                                  title="Usuário sincronizado do Active Directory"
+                                >
+                                  <Network className="h-3 w-3" /> AD
+                                </span>
+                              )}
+                            </div>
                             <p className="text-muted-foreground text-xs">
-                              {user.email || (user.user_type === 'service' ? 'Conta de Serviço' : '-')}
+                              {user.email || (user.auth_source === 'ad' ? 'Active Directory' : user.user_type === 'service' ? 'Conta de Serviço' : '-')}
                             </p>
                           </div>
                         </div>
@@ -305,15 +315,15 @@ export default function UsersPage() {
                           </span>
                           <button
                             onClick={() => {
-                              if (user.id === currentUser?.id) return
+                              if (user.id === currentUser?.id || user.auth_source === 'ad') return
                               toggleAdminMutation.mutate({
                                 id: user.id,
                                 isAdmin: !user.is_admin,
                               })
                             }}
-                            disabled={user.id === currentUser?.id || toggleAdminMutation.isPending}
+                            disabled={user.id === currentUser?.id || toggleAdminMutation.isPending || user.auth_source === 'ad'}
                             className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors ${
-                              user.id === currentUser?.id
+                              user.id === currentUser?.id || user.auth_source === 'ad'
                                 ? 'cursor-not-allowed opacity-50'
                                 : 'cursor-pointer hover:opacity-80'
                             } ${
@@ -322,7 +332,9 @@ export default function UsersPage() {
                                 : 'bg-muted text-muted-foreground'
                             }`}
                             title={
-                              user.id === currentUser?.id
+                              user.auth_source === 'ad'
+                                ? 'Função gerenciada pelo Active Directory'
+                                : user.id === currentUser?.id
                                 ? 'Não é possível alterar sua própria função de administrador'
                                 : user.is_admin
                                   ? 'Clique para remover a função de administrador'
@@ -390,6 +402,14 @@ export default function UsersPage() {
                         </button>
                       </td>
                       <td className="px-4 py-3 text-right">
+                        {user.auth_source === 'ad' ? (
+                          <span
+                            className="pr-2 text-xs text-muted-foreground"
+                            title="Conta gerenciada pelo Active Directory — senha e exclusão são controladas no AD"
+                          >
+                            Gerenciado no AD
+                          </span>
+                        ) : (
                         <div className="flex justify-end gap-1">
                           {user.user_type === 'service' ? (
                             <Button
@@ -421,6 +441,7 @@ export default function UsersPage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
+                        )}
                       </td>
                     </tr>
                   ))}

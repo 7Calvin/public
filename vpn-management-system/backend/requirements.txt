@@ -20,6 +20,9 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 pyotp==2.9.0
 qrcode[pil]==7.4.2
+ldap3==2.9.1  # LDAP/Active Directory authentication (simple bind)
+msldap==0.5.15  # signed NTLM LDAP bind over 389 (AD requiring integrity, no LDAPS)
+pycryptodome==3.20.0  # MD4 for NTLM (OpenSSL 3 dropped it from hashlib)
 
 # ==================== Validation ====================
 pydantic==2.5.3

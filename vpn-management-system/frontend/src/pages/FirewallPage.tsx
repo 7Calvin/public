@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { firewallApi } from '@/api/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,6 +18,7 @@ interface QuickRuleStatus {
   is_active: boolean
   id: string | null
   description: string
+  networks?: string[]
 }
 
 interface QuickRulesResponse {
@@ -153,6 +154,15 @@ export default function FirewallPage() {
     queryFn: () => firewallApi.getQuickRules().then((res) => res.data),
   })
 
+  // Editable networks for the "allow-internal-network" quick rule. Prefilled
+  // from the server (current rule networks, or the default from push routes).
+  const [internalNets, setInternalNets] = useState('')
+  useEffect(() => {
+    const nets = quickRules?.['allow-internal-network']?.networks
+    if (nets) setInternalNets(nets.join(', '))
+  }, [quickRules])
+  const parseNets = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean)
+
   const { data: natRules, isLoading: isLoadingNAT } = useQuery<NATRule[]>({
     queryKey: ['nat-rules'],
     queryFn: () => firewallApi.listNatRules().then((res) => res.data),
@@ -209,16 +219,35 @@ export default function FirewallPage() {
   })
 
   const quickRuleToggleMutation = useMutation({
-    mutationFn: (ruleKey: string) => firewallApi.toggleQuickRule(ruleKey),
-    onSuccess: async (_, ruleKey) => {
+    mutationFn: ({ key, networks }: { key: string; networks?: string[] }) =>
+      firewallApi.toggleQuickRule(key, networks),
+    onSuccess: async (_, { key }) => {
       queryClient.invalidateQueries({ queryKey: ['firewall-quick-rules'] })
       queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
-      const config = QUICK_RULE_CONFIG[ruleKey]
-      toast({ title: `${config?.label || ruleKey} alternada` })
+      const config = QUICK_RULE_CONFIG[key]
+      toast({ title: `${config?.label || key} alternada` })
       await applyRulesAfterChange()
     },
     onError: () => {
       toast({ variant: 'destructive', title: 'Falha ao alternar regra' })
+    },
+  })
+
+  const setNetworksMutation = useMutation({
+    mutationFn: (networks: string[]) =>
+      firewallApi.setQuickRuleNetworks('allow-internal-network', networks),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['firewall-quick-rules'] })
+      queryClient.invalidateQueries({ queryKey: ['firewall-rules'] })
+      toast({ title: 'Redes atualizadas' })
+      await applyRulesAfterChange()
+    },
+    onError: (e: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Falha ao salvar redes',
+        description: e?.response?.data?.detail,
+      })
     },
   })
 
@@ -525,32 +554,66 @@ export default function FirewallPage() {
               return (
                 <div
                   key={key}
-                  className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${
+                  className={`p-4 rounded-lg border transition-colors ${
                     isEnabled ? 'bg-primary/10 border-primary' : 'bg-muted/50'
                   }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <Icon className={`h-5 w-5 flex-shrink-0 ${isEnabled ? config.color : 'text-muted-foreground'}`} />
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm">{config.label}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {config.subtitle}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <Icon className={`h-5 w-5 flex-shrink-0 ${isEnabled ? config.color : 'text-muted-foreground'}`} />
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm">{config.label}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {config.subtitle}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() =>
+                        quickRuleToggleMutation.mutate({
+                          key,
+                          networks: key === 'allow-internal-network' ? parseNets(internalNets) : undefined,
+                        })
+                      }
+                      disabled={quickRuleToggleMutation.isPending}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 ml-3 items-center rounded-full transition-colors ${
+                        isEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          isEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {key === 'allow-internal-network' && (
+                    <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
+                      <Label className="text-xs text-muted-foreground">
+                        Redes permitidas (CIDR, separadas por vírgula)
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={internalNets}
+                          onChange={(e) => setInternalNets(e.target.value)}
+                          placeholder="10.10.22.0/24, 192.168.0.0/16"
+                          className="h-9 flex-1 font-mono text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setNetworksMutation.mutate(parseNets(internalNets))}
+                          disabled={setNetworksMutation.isPending || parseNets(internalNets).length === 0}
+                        >
+                          Salvar
+                        </Button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Puxado das push routes por padrão. Edite para restringir a uma sub-rede específica — "Salvar" já aplica.
                       </p>
                     </div>
-                  </div>
-                  <button
-                    onClick={() => quickRuleToggleMutation.mutate(key)}
-                    disabled={quickRuleToggleMutation.isPending}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 ml-3 items-center rounded-full transition-colors ${
-                      isEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        isEnabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                  )}
                 </div>
               )
             })}

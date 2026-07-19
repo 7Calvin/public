@@ -47,7 +47,7 @@ export default function DashboardLayout() {
     })
   }
 
-  const visibleNav = navigation.filter((item) => !item.adminOnly || user?.is_admin)
+  const visibleNav = navigation.filter((item) => (!item.adminOnly || user?.is_admin) && !item.hidden)
   const domain = typeof window !== 'undefined' ? window.location.hostname : ''
 
   const railWidth = collapsed ? 'lg:w-[72px]' : 'lg:w-60'

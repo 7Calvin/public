@@ -8,10 +8,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.user import User
+from app.models.ldap_settings import LdapSettings
 from app.dependencies.auth import require_admin
 from app.schemas.common import MessageResponse
+from app.schemas.ldap import (
+    LdapSettingsUpdate,
+    LdapSettingsResponse,
+    LdapTestRequest,
+    LdapTestResponse,
+)
 
 router = APIRouter()
+
+
+def _ldap_to_response(cfg: Optional[LdapSettings]) -> LdapSettingsResponse:
+    """Serialize LDAP settings for the UI (password write-only)."""
+    if cfg is None:
+        return LdapSettingsResponse(enabled=False)
+    return LdapSettingsResponse(
+        enabled=cfg.enabled,
+        server=cfg.server,
+        port=cfg.port,
+        use_ntlm=cfg.use_ntlm,
+        ad_domain=cfg.ad_domain,
+        bind_dn=cfg.bind_dn,
+        bind_password_set=bool(cfg.bind_password),
+        search_base=cfg.search_base,
+        user_attr=cfg.user_attr,
+        required_group_dn=cfg.required_group_dn,
+        timeout=cfg.timeout,
+    )
 
 
 @router.get("/dashboard")
@@ -197,3 +223,80 @@ async def list_backups(
     """List available backups"""
     # TODO: Implement backup listing
     return {"message": "Backup list - to be implemented"}
+
+
+# ==================== LDAP / Active Directory ====================
+
+@router.get("/ldap-settings", response_model=LdapSettingsResponse)
+async def get_ldap_settings(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current LDAP/AD configuration (bind password never exposed)."""
+    from sqlalchemy import select
+
+    cfg = (await db.execute(select(LdapSettings).limit(1))).scalar_one_or_none()
+    return _ldap_to_response(cfg)
+
+
+@router.put("/ldap-settings", response_model=LdapSettingsResponse)
+async def update_ldap_settings(
+    data: LdapSettingsUpdate,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create or update the single LDAP/AD settings row (admin-only)."""
+    from sqlalchemy import select
+
+    cfg = (await db.execute(select(LdapSettings).limit(1))).scalar_one_or_none()
+    if cfg is None:
+        cfg = LdapSettings()
+        db.add(cfg)
+
+    cfg.enabled = data.enabled
+    cfg.server = data.server
+    cfg.port = data.port
+    cfg.use_ntlm = data.use_ntlm
+    cfg.ad_domain = data.ad_domain
+    cfg.bind_dn = data.bind_dn
+    cfg.search_base = data.search_base
+    cfg.user_attr = data.user_attr
+    cfg.required_group_dn = data.required_group_dn
+    cfg.timeout = data.timeout
+    # Only overwrite the password when a new non-empty value is provided.
+    if data.bind_password:
+        cfg.bind_password = data.bind_password
+
+    await db.commit()
+    await db.refresh(cfg)
+    return _ldap_to_response(cfg)
+
+
+@router.post("/ldap-settings/test", response_model=LdapTestResponse)
+async def test_ldap_settings(
+    data: LdapTestRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate a candidate LDAP config (service-account bind + base search)."""
+    from sqlalchemy import select
+    from app.services.ldap_service import LdapService
+
+    # Fall back to the stored bind password if the form left it blank.
+    bind_password = data.bind_password
+    if not bind_password:
+        cfg = (await db.execute(select(LdapSettings).limit(1))).scalar_one_or_none()
+        bind_password = cfg.bind_password if cfg else None
+
+    conf = {
+        "server": data.server,
+        "port": data.port,
+        "use_ntlm": data.use_ntlm,
+        "ad_domain": data.ad_domain,
+        "bind_dn": data.bind_dn,
+        "bind_password": bind_password,
+        "search_base": data.search_base,
+        "timeout": data.timeout,
+    }
+    ok, error = await LdapService(db).test_connection(conf)
+    return LdapTestResponse(success=ok, message=error)

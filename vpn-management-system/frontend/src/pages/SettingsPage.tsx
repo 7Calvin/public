@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
 import { authApi, proxyApi } from '@/api/client'
@@ -9,13 +9,23 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
 import { TIMEZONES, getTimezone, setTimezone } from '@/lib/tz'
-import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save, ScrollText, Clock } from 'lucide-react'
+import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save, ScrollText, Clock, Network } from 'lucide-react'
 import SystemUpdateCard from '@/components/SystemUpdateCard'
-import { Link } from 'react-router-dom'
+import LdapSettingsCard from '@/components/LdapSettingsCard'
+import { Link, useSearchParams } from 'react-router-dom'
 
 export default function SettingsPage() {
   const { user, checkAuth } = useAuthStore()
   const { toast } = useToast()
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState<'conta' | 'auth' | 'sistema'>('conta')
+  // Deep-link support: /settings?tab=auth opens the AD tab (e.g. from the
+  // command palette). Admin-only tabs fall back to "conta" for non-admins.
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if ((t === 'auth' || t === 'sistema') && user?.is_admin) setTab(t)
+    else if (t === 'conta') setTab('conta')
+  }, [searchParams, user?.is_admin])
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -155,12 +165,40 @@ export default function SettingsPage() {
     changePasswordMutation.mutate()
   }
 
+  const tabs = [
+    { id: 'conta' as const, label: 'Conta', icon: User, show: true },
+    { id: 'auth' as const, label: 'Autenticação AD', icon: Network, show: !!user?.is_admin },
+    { id: 'sistema' as const, label: 'Sistema', icon: Server, show: !!user?.is_admin },
+  ].filter((t) => t.show)
+
   return (
     <div className="space-y-6">
       <PageHeader title="Configurações" subtitle="Gerencie sua conta e o sistema" />
 
-      <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
-      {/* Profile Info */}
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {tabs.map((t) => {
+          const Icon = t.icon
+          const active = tab === t.id
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                active
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon className="h-4 w-4" /> {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="max-w-3xl space-y-6">
+      {/* Conta — Perfil */}
+      {tab === 'conta' && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -187,8 +225,10 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      )}
 
-      {/* Security */}
+      {/* Conta — Segurança */}
+      {tab === 'conta' && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -499,9 +539,10 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
-      {/* Management Panel Domain (admin only) */}
-      {user?.is_admin && (
+      {/* Sistema — Management Panel Domain */}
+      {user?.is_admin && tab === 'sistema' && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -612,9 +653,8 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* System & Updates (admin only) */}
-      {/* Logs & Auditoria (admin only) */}
-      {user?.is_admin && (
+      {/* Sistema — Logs & Auditoria */}
+      {user?.is_admin && tab === 'sistema' && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ScrollText className="h-5 w-5" /> Logs & Auditoria</CardTitle>
@@ -695,7 +735,11 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {user?.is_admin && <SystemUpdateCard />}
+      {/* Autenticação AD */}
+      {user?.is_admin && tab === 'auth' && <LdapSettingsCard />}
+
+      {/* Sistema — Atualizações */}
+      {user?.is_admin && tab === 'sistema' && <SystemUpdateCard />}
       </div>
     </div>
   )
