@@ -1,5 +1,5 @@
 """
-VPN Management System - Backend API
+EdgeGate - Backend API
 """
 
 __version__ = "1.0.0"

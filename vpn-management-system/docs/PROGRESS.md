@@ -1,4 +1,4 @@
-# VPN Management System - Development Progress
+# EdgeGate - Development Progress
 
 ## Status: v1.2.1 - Múltiplas Subnets IPsec
 

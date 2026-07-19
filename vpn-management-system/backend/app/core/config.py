@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     )
 
     # ==================== General ====================
-    PROJECT_NAME: str = "VPN Management System"
+    PROJECT_NAME: str = "EdgeGate"
     VERSION: str = _read_version()
     ENVIRONMENT: str = "development"
     DEBUG: bool = False

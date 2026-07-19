@@ -1,10 +1,10 @@
-# VPN Management System - Upgrade Guide
+# EdgeGate - Upgrade Guide
 
-This guide explains how to upgrade your VPN Management System to the latest version.
+This guide explains how to upgrade your EdgeGate to the latest version.
 
 ## Prerequisites
 
-- Existing VPN Management System installation
+- Existing EdgeGate installation
 - Root access to the server
 - Git installed on the server
 

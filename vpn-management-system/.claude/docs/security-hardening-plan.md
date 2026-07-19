@@ -2,7 +2,7 @@
 
 ## Contexto
 
-O VPN Management System (FastAPI + React + Docker + OpenVPN + StrongSwan) possui **vulnerabilidades criticas de seguranca** identificadas: secrets hardcoded em config.py e docker-compose.yml, command injection em vpn_service.py e agents Flask, rate limiting nao implementado (placeholder), token blacklist inexistente no logout, endpoints OpenVPN sem autenticacao, CORS permissivo, e headers de seguranca ausentes. Este plano corrige todas essas vulnerabilidades e cria agents Claude Code uteis para o projeto.
+O EdgeGate (FastAPI + React + Docker + OpenVPN + StrongSwan) possui **vulnerabilidades criticas de seguranca** identificadas: secrets hardcoded em config.py e docker-compose.yml, command injection em vpn_service.py e agents Flask, rate limiting nao implementado (placeholder), token blacklist inexistente no logout, endpoints OpenVPN sem autenticacao, CORS permissivo, e headers de seguranca ausentes. Este plano corrige todas essas vulnerabilidades e cria agents Claude Code uteis para o projeto.
 
 ---
 

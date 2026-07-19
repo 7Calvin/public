@@ -1,4 +1,4 @@
-# VPN Management System - Test Checklist
+# EdgeGate - Test Checklist
 
 Documento para rastrear testes manuais e funcionais do sistema.
 

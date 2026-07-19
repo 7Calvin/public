@@ -1,4 +1,4 @@
-# Troubleshooting - VPN Management System
+# Troubleshooting - EdgeGate
 
 ## Problemas Comuns em Produção
 
@@ -167,7 +167,7 @@ Execute para verificar todo o sistema:
 
 ```bash
 #!/bin/bash
-echo "=== VPN Management System - Health Check ==="
+echo "=== EdgeGate - Health Check ==="
 
 echo -e "\n1. Containers:"
 sudo docker ps --filter "name=vpn-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"

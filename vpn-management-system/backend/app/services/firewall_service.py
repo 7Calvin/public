@@ -233,7 +233,7 @@ class FirewallService:
         lines = [
             "#!/usr/sbin/nft -f",
             "",
-            f"# VPN Management System Firewall Rules",
+            f"# EdgeGate Firewall Rules",
             f"# Generated at: {datetime.utcnow().isoformat()}",
             f"# Total rules: {len(rules)}",
             "",
@@ -620,7 +620,7 @@ class FirewallService:
         lines = [
             "#!/usr/sbin/nft -f",
             "",
-            "# NAT Configuration for VPN Management System",
+            "# NAT Configuration for EdgeGate",
             f"# Generated at: {datetime.utcnow().isoformat()}",
             f"# Public interface: {settings.PUBLIC_INTERFACE}",
             f"# VPN Network: {settings.OPENVPN_NETWORK}/{settings.OPENVPN_NETMASK_CIDR}",

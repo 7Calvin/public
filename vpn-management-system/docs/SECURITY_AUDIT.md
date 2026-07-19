@@ -1,5 +1,5 @@
 # Relatório de Auditoria de Segurança
-## VPN Management System
+## EdgeGate
 
 **Data:** 2026-02-09
 **Escopo:** Full (Frontend, Backend, Configurações, VPN/IPsec)

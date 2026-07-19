@@ -1,4 +1,4 @@
-# VPN Management System
+# EdgeGate
 
 Sistema completo de gerenciamento OpenVPN com interface web moderna, controle granular de firewall, port forwarding (DNAT) e suporte para usuários humanos e service accounts.
 

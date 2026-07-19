@@ -1,6 +1,6 @@
 """
 Alembic Environment Configuration
-Async SQLAlchemy support for VPN Management System
+Async SQLAlchemy support for EdgeGate
 """
 import asyncio
 from logging.config import fileConfig
