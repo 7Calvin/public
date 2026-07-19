@@ -22,6 +22,12 @@ class UserType(str, enum.Enum):
     ADMIN = "admin"
 
 
+class AuthSource(str, enum.Enum):
+    """Where a user's credentials are validated."""
+    LOCAL = "local"  # password stored/verified in this database
+    AD = "ad"        # authenticated against Active Directory (LDAP)
+
+
 class User(Base):
     """User model - supports both human users and service accounts"""
 
@@ -33,13 +39,21 @@ class User(Base):
     # Basic info
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(255), index=True)
-    password_hash = Column(String(255), nullable=False)
+    # Nullable: AD-backed users have no local password (auth_source == 'ad').
+    password_hash = Column(String(255))
 
     # User type and flags
     user_type = Column(
         SQLEnum(UserType, name="user_type", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=UserType.HUMAN
+    )
+    # Which credential store validates this user. AD users are auto-provisioned
+    # (JIT) on first successful AD login so connections/quotas/firewall can attach.
+    auth_source = Column(
+        SQLEnum(AuthSource, name="auth_source", values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=AuthSource.LOCAL,
     )
     is_active = Column(Boolean, default=True, index=True)
     is_admin = Column(Boolean, default=False)
@@ -130,6 +144,11 @@ class User(Base):
     def is_service_account(self) -> bool:
         """Check if this is a service account"""
         return self.user_type == UserType.SERVICE
+
+    @property
+    def is_ad_user(self) -> bool:
+        """Check if this user authenticates against Active Directory"""
+        return self.auth_source == AuthSource.AD
 
     @property
     def is_expired(self) -> bool:

@@ -7,7 +7,7 @@ from datetime import datetime
 from uuid import UUID
 import re
 
-from app.models.user import UserType
+from app.models.user import UserType, AuthSource
 
 
 class UserBase(BaseModel):
@@ -73,6 +73,7 @@ class UserResponse(BaseModel):
     username: str
     email: Optional[str]
     user_type: UserType
+    auth_source: AuthSource = AuthSource.LOCAL
     is_active: bool
     is_admin: bool
     mfa_required: bool
@@ -95,6 +96,7 @@ class UserListResponse(BaseModel):
     username: str
     email: Optional[str]
     user_type: UserType
+    auth_source: AuthSource = AuthSource.LOCAL
     is_active: bool
     is_admin: bool
     mfa_enabled: bool

@@ -4,6 +4,7 @@ export interface User {
   username: string
   email: string
   user_type: 'human' | 'service' | 'admin'
+  auth_source?: 'local' | 'ad'
   is_active: boolean
   is_admin: boolean
   mfa_enabled: boolean

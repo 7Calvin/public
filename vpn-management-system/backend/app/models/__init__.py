@@ -1,7 +1,8 @@
 """
 Database Models
 """
-from app.models.user import User, UserType
+from app.models.user import User, UserType, AuthSource
+from app.models.ldap_settings import LdapSettings
 from app.models.vpn_profile import VPNProfile, AuthMethod
 from app.models.connection import Connection, ConnectionStatus
 from app.models.bandwidth_sample import BandwidthSample
@@ -17,6 +18,9 @@ __all__ = [
     # User
     "User",
     "UserType",
+    "AuthSource",
+    # LDAP / AD
+    "LdapSettings",
     # VPN Profile
     "VPNProfile",
     "AuthMethod",
