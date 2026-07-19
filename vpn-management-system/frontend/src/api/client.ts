@@ -226,7 +226,11 @@ export const firewallApi = {
   // Quick rules
   getQuickRules: () => api.get('/firewall/quick-rules'),
 
-  toggleQuickRule: (ruleKey: string) => api.post(`/firewall/quick-rules/${ruleKey}/toggle`),
+  toggleQuickRule: (ruleKey: string, networks?: string[]) =>
+    api.post(`/firewall/quick-rules/${ruleKey}/toggle`, networks ? { networks } : {}),
+
+  setQuickRuleNetworks: (ruleKey: string, networks: string[]) =>
+    api.put(`/firewall/quick-rules/${ruleKey}/networks`, { networks }),
 
   // NAT/DNAT rules
   listNatRules: () => api.get('/firewall/nat'),

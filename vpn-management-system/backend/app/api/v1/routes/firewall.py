@@ -1,10 +1,12 @@
 """
 Firewall Routes - Rules Management
 """
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 import httpx
+import ipaddress
 import logging
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +78,69 @@ QUICK_RULES = {
         "applies_to_service_accounts": True,
     },
 }
+
+DEFAULT_PRIVATE_NETWORKS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+
+class QuickRuleToggleRequest(BaseModel):
+    """Optional toggle body. `networks` overrides the destination networks for
+    allow-internal-network when turning it ON."""
+    networks: Optional[List[str]] = None
+
+
+class QuickRuleNetworks(BaseModel):
+    networks: List[str]
+
+
+def _derive_internal_networks(server_config: dict) -> List[str]:
+    """Default networks for allow-internal-network: push routes > NAT gateway > RFC1918."""
+    push_routes = server_config.get("push_routes", []) or []
+    nets = [r.strip() for r in push_routes if r and r.strip()]
+    if nets:
+        return nets
+    if settings.NAT_GATEWAY_NETWORK:
+        return [n.strip() for n in settings.NAT_GATEWAY_NETWORK.split(",") if n.strip()]
+    return list(DEFAULT_PRIVATE_NETWORKS)
+
+
+def _validate_networks(networks: List[str]) -> Optional[str]:
+    """Return an error message if any entry is not a valid CIDR/IP, else None."""
+    if not networks:
+        return "Informe ao menos uma rede."
+    for n in networks:
+        try:
+            ipaddress.ip_network(n, strict=False)
+        except ValueError:
+            return f"Rede inválida: '{n}'"
+    return None
+
+
+async def _create_internal_network_rules(db, admin, networks: List[str]) -> List[str]:
+    """Create one accept rule per network for allow-internal-network. Returns ids."""
+    from app.models.firewall import FirewallRule, FirewallAction, ProtocolType
+
+    rule_def = QUICK_RULES["allow-internal-network"]
+    created = []
+    for dest in networks:
+        rule = FirewallRule(
+            name=rule_def["name"],
+            description=rule_def["description"],
+            action=FirewallAction(rule_def["action"]),
+            protocol=ProtocolType(rule_def["protocol"]),
+            priority=rule_def["priority"],
+            source_network=rule_def.get("source_network"),
+            destination_network=dest,
+            destination_port_range=rule_def.get("destination_port_range"),
+            applies_to_human_users=rule_def.get("applies_to_human_users", True),
+            applies_to_service_accounts=rule_def.get("applies_to_service_accounts", True),
+            created_by_id=admin.id,
+            is_active=True,
+        )
+        db.add(rule)
+        await db.commit()
+        await db.refresh(rule)
+        created.append(str(rule.id))
+    return created
 
 
 @router.get("/rules", response_model=PaginatedResponse[FirewallRuleListResponse])
@@ -318,14 +383,25 @@ async def get_quick_rules_status(
         query = await db.execute(
             select(FirewallRule).where(FirewallRule.name == rule_key)
         )
-        rule = query.scalar_one_or_none()
+        rules = query.scalars().all()
 
-        result[rule_key] = {
-            "exists": rule is not None,
-            "is_active": rule.is_active if rule else False,
-            "id": str(rule.id) if rule else None,
+        entry = {
+            "exists": len(rules) > 0,
+            "is_active": any(r.is_active for r in rules),
+            "id": str(rules[0].id) if rules else None,
             "description": QUICK_RULES[rule_key]["description"],
         }
+
+        # For allow-internal-network expose the networks so the UI can show and
+        # edit them: the rule's current networks if it exists, else the default.
+        if rule_key == "allow-internal-network":
+            if rules:
+                entry["networks"] = [str(r.destination_network) for r in rules if r.destination_network]
+            else:
+                from app.services.vpn_service import get_server_config
+                entry["networks"] = _derive_internal_networks(get_server_config())
+
+        result[rule_key] = entry
 
     return result
 
@@ -333,6 +409,7 @@ async def get_quick_rules_status(
 @router.post("/quick-rules/{rule_key}/toggle")
 async def toggle_quick_rule(
     rule_key: str,
+    body: Optional[QuickRuleToggleRequest] = None,
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -357,11 +434,13 @@ async def toggle_quick_rule(
     query = await db.execute(
         select(FirewallRule).where(FirewallRule.name == rule_key)
     )
-    rule = query.scalar_one_or_none()
+    rules = query.scalars().all()
 
-    if rule:
-        # Rule exists - delete it (toggle OFF = remove rule)
-        await db.delete(rule)
+    if rules:
+        # Rule(s) exist - toggle OFF removes every rule under this quick-rule name
+        # (allow-internal-network may have created one rule per network).
+        for r in rules:
+            await db.delete(r)
         await db.commit()
 
         # Auto-apply firewall rules after deleting quick rule
@@ -374,56 +453,52 @@ async def toggle_quick_rule(
             "id": None,
         }
     else:
-        # Create new rule
+        # Create new rule(s)
         from app.services.vpn_service import get_server_config
-        import ipaddress
 
         server_config = get_server_config()
 
-        # Get VPN network for client-to-client rule
-        vpn_network = None
-        if rule_key == "block-client-to-client":
-            vpn_net = server_config.get("vpn_network", settings.OPENVPN_NETWORK)
-            vpn_mask = server_config.get("vpn_netmask", settings.OPENVPN_NETMASK)
-            # Convert netmask to CIDR
-            network = ipaddress.ip_network(f"{vpn_net}/{vpn_mask}", strict=False)
-            vpn_network = str(network)
-
-        # For allow-internal-network, determine which networks to allow.
-        # Priority: push_routes from VPN settings > NAT_GATEWAY_NETWORK from .env > all RFC1918
-        internal_networks = None
         if rule_key == "allow-internal-network":
-            push_routes = server_config.get("push_routes", [])
-            if push_routes:
-                internal_networks = ",".join(push_routes)
-            elif settings.NAT_GATEWAY_NETWORK:
-                internal_networks = settings.NAT_GATEWAY_NETWORK
-            else:
-                # Fallback: allow all RFC1918 private networks
-                internal_networks = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+            # Networks: explicit override from the UI > push routes > NAT gateway > RFC1918.
+            override = body.networks if body and body.networks else None
+            networks = (
+                [n.strip() for n in override if n and n.strip()]
+                if override
+                else _derive_internal_networks(server_config)
+            )
+            err = _validate_networks(networks)
+            if err:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
+            created_ids = await _create_internal_network_rules(db, admin, networks)
+        else:
+            # block-client-to-client and any other single-network rule.
+            src_network = None
+            dest_network = rule_def.get("destination_network")
+            if rule_key == "block-client-to-client":
+                vpn_net = server_config.get("vpn_network", settings.OPENVPN_NETWORK)
+                vpn_mask = server_config.get("vpn_netmask", settings.OPENVPN_NETMASK)
+                vpn_network = str(ipaddress.ip_network(f"{vpn_net}/{vpn_mask}", strict=False))
+                src_network = vpn_network
+                dest_network = vpn_network
 
-        new_rule = FirewallRule(
-            name=rule_def["name"],
-            description=rule_def["description"],
-            action=FirewallAction(rule_def["action"]),
-            protocol=ProtocolType(rule_def["protocol"]),
-            priority=rule_def["priority"],
-            source_network=vpn_network if rule_key == "block-client-to-client" else rule_def.get("source_network"),
-            destination_network=(
-                vpn_network if rule_key == "block-client-to-client"
-                else internal_networks if rule_key == "allow-internal-network"
-                else rule_def.get("destination_network")
-            ),
-            destination_port_range=rule_def.get("destination_port_range"),
-            applies_to_human_users=rule_def.get("applies_to_human_users", True),
-            applies_to_service_accounts=rule_def.get("applies_to_service_accounts", True),
-            created_by_id=admin.id,
-            is_active=True,
-        )
-
-        db.add(new_rule)
-        await db.commit()
-        await db.refresh(new_rule)
+            new_rule = FirewallRule(
+                name=rule_def["name"],
+                description=rule_def["description"],
+                action=FirewallAction(rule_def["action"]),
+                protocol=ProtocolType(rule_def["protocol"]),
+                priority=rule_def["priority"],
+                source_network=src_network,
+                destination_network=dest_network,
+                destination_port_range=rule_def.get("destination_port_range"),
+                applies_to_human_users=rule_def.get("applies_to_human_users", True),
+                applies_to_service_accounts=rule_def.get("applies_to_service_accounts", True),
+                created_by_id=admin.id,
+                is_active=True,
+            )
+            db.add(new_rule)
+            await db.commit()
+            await db.refresh(new_rule)
+            created_ids = [str(new_rule.id)]
 
         # Auto-apply firewall rules after creating quick rule
         firewall_service = FirewallService(db)
@@ -432,8 +507,52 @@ async def toggle_quick_rule(
         return {
             "action": "created",
             "is_active": True,
-            "id": str(new_rule.id),
+            "id": created_ids[0] if created_ids else None,
         }
+
+
+@router.put("/quick-rules/{rule_key}/networks")
+async def set_quick_rule_networks(
+    rule_key: str,
+    data: QuickRuleNetworks,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Replace the allowed networks for allow-internal-network (admin only).
+
+    Deletes the current rules under this quick-rule name and recreates them
+    (active) with the given networks — so the admin can edit the target subnet(s)
+    right from the Firewall page.
+    """
+    from sqlalchemy import select
+    from app.models.firewall import FirewallRule
+
+    if rule_key != "allow-internal-network":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Somente 'allow-internal-network' aceita edição de redes",
+        )
+
+    networks = [n.strip() for n in data.networks if n and n.strip()]
+    err = _validate_networks(networks)
+    if err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
+
+    existing = (
+        await db.execute(select(FirewallRule).where(FirewallRule.name == rule_key))
+    ).scalars().all()
+    for r in existing:
+        await db.delete(r)
+    if existing:
+        await db.commit()
+
+    created_ids = await _create_internal_network_rules(db, admin, networks)
+
+    firewall_service = FirewallService(db)
+    await firewall_service.apply_rules()
+
+    return {"is_active": True, "networks": networks, "id": created_ids[0] if created_ids else None}
 
 
 # ==================== NAT/DNAT Routes ====================
