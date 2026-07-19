@@ -169,7 +169,7 @@ export default function LdapSettingsCard() {
               id="ldap-server"
               value={form.server}
               onChange={(e) => set('server', e.target.value)}
-              placeholder="10.0.0.10 ou dc.empresa.com"
+              placeholder="10.0.0.10 ou dc.calvin.local"
               className="font-mono"
             />
           </div>
@@ -220,7 +220,7 @@ export default function LdapSettingsCard() {
             id="ldap-bind-dn"
             value={form.bind_dn}
             onChange={(e) => set('bind_dn', e.target.value)}
-            placeholder={form.use_ntlm ? 'seven  (ou CALVIN\\seven)' : 'CN=svc-vpn,OU=Service,DC=empresa,DC=com'}
+            placeholder={form.use_ntlm ? 'seven  (ou CALVIN\\seven)' : 'CN=svc-vpn,OU=Service,DC=calvin,DC=local'}
             className="font-mono"
           />
           {form.use_ntlm && (
@@ -269,7 +269,7 @@ export default function LdapSettingsCard() {
               id="ldap-base"
               value={form.search_base}
               onChange={(e) => set('search_base', e.target.value)}
-              placeholder="DC=empresa,DC=com"
+              placeholder="DC=calvin,DC=local"
               className="font-mono"
             />
           </div>
@@ -291,24 +291,13 @@ export default function LdapSettingsCard() {
             id="ldap-group"
             value={form.required_group_dn}
             onChange={(e) => set('required_group_dn', e.target.value)}
-            placeholder="CN=VPN-Users,OU=Groups,DC=empresa,DC=com"
+            placeholder="CN=VPN-Users,OU=Groups,DC=calvin,DC=local"
             className="font-mono"
           />
           <p className="text-xs text-muted-foreground">
             Só usuários deste grupo conectam. Grupos aninhados (grupo dentro de grupo) são
             resolvidos automaticamente.
           </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="ldap-timeout">Timeout (segundos)</Label>
-          <Input
-            id="ldap-timeout"
-            type="number"
-            value={form.timeout}
-            onChange={(e) => set('timeout', parseInt(e.target.value || '5', 10))}
-            className="w-28 font-mono"
-          />
         </div>
 
         {/* Test result */}

@@ -168,6 +168,9 @@ export const vpnApi = {
 
   restartServer: () => api.post('/vpn/server/restart'),
 
+  changeNetwork: (data: { vpn_network: string; vpn_netmask: string }) =>
+    api.put('/vpn/server/network', data),
+
   getActiveConnections: () => api.get('/vpn/server/connections'),
 
   disconnectClient: (username: string) => api.post(`/vpn/server/connections/${username}/disconnect`),
@@ -283,8 +286,8 @@ export const connectionsApi = {
 
   bandwidth: () => api.get('/connections/stats/bandwidth'),
 
-  throughput: (window: '1h' | '6h' | '24h' | '7d' = '24h') =>
-    api.get('/connections/throughput', { params: { window } }),
+  throughput: (window: '1h' | '6h' | '24h' | '7d' = '24h', source: 'openvpn' | 'ipsec' | 'total' = 'openvpn') =>
+    api.get('/connections/throughput', { params: { window, source } }),
 
   userStats: (userId: string) => api.get(`/connections/stats/user/${userId}`),
 

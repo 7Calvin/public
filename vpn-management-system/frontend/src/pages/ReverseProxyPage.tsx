@@ -472,7 +472,7 @@ export default function ReverseProxyPage() {
               id={`${prefix}-hostname`}
               value={formData.hostname}
               onChange={(e) => updateField('hostname', e.target.value)}
-              placeholder="app.example.com"
+              placeholder="app.calvin.local"
             />
           </div>
         </div>

@@ -1,11 +1,11 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
-import { navigation } from '@/lib/navigation'
+import { navGroups, type NavItem } from '@/lib/navigation'
 import { Logo, LogoMark } from '@/components/Logo'
 import { CommandPalette } from '@/components/CommandPalette'
 import { SystemBell } from '@/components/SystemBell'
 import { useSystemStatus } from '@/hooks/useSystemStatus'
-import { LogOut, Menu, X, Search, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { LogOut, Menu, X, Search, PanelLeftClose, PanelLeft, ChevronDown } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { systemApi } from '@/api/client'
@@ -17,17 +17,11 @@ export default function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('eg.rail') === '1')
   const [cmdkOpen, setCmdkOpen] = useState(false)
   const [version, setVersion] = useState<string | null>(null)
-  const { status, alerts, isAdmin } = useSystemStatus()
+  const { alerts, isAdmin } = useSystemStatus()
 
   useEffect(() => {
     systemApi.version().then((res) => setVersion(res.data?.current ?? null)).catch(() => setVersion(null))
   }, [])
-
-  const health = {
-    ok: { label: 'Sistemas OK', cls: 'border-success/30 bg-success/10 text-success', dot: 'bg-success' },
-    warn: { label: 'Atenção', cls: 'border-warning/30 bg-warning/10 text-warning', dot: 'bg-warning' },
-    down: { label: 'Problema', cls: 'border-destructive/30 bg-destructive/10 text-destructive', dot: 'bg-destructive' },
-  }[status]
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -47,7 +41,44 @@ export default function DashboardLayout() {
     })
   }
 
-  const visibleNav = navigation.filter((item) => (!item.adminOnly || user?.is_admin) && !item.hidden)
+  // Filter each group's items by admin visibility, drop empty groups.
+  const visibleGroups = navGroups
+    .map((g) => ({ ...g, items: g.items.filter((i) => (!i.adminOnly || user?.is_admin) && !i.hidden) }))
+    .filter((g) => g.items.length > 0)
+  // Collapsed rail shows every leaf as a flat icon list (groups flatten).
+  const visibleLeaves = visibleGroups.flatMap((g) => g.items)
+
+  const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/')
+
+  // Collapsible sections: collapsed by default; the section holding the current
+  // route auto-expands. An explicit user toggle overrides both.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  const isGroupActive = (items: NavItem[]) => items.some((i) => isActive(i.href))
+  const isGroupOpen = (g: { label: string; items: NavItem[] }) => openGroups[g.label] ?? isGroupActive(g.items)
+  const toggleGroup = (g: { label: string; items: NavItem[] }) => setOpenGroups((s) => ({ ...s, [g.label]: !isGroupOpen(g) }))
+
+  const renderLink = (item: NavItem, opts?: { indented?: boolean }) => {
+    const active = isActive(item.href)
+    return (
+      <Link
+        key={item.href}
+        to={item.href}
+        onClick={() => setMobileOpen(false)}
+        title={collapsed ? item.name : undefined}
+        className={cn(
+          'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+          collapsed && 'justify-center px-0',
+          opts?.indented && !collapsed && 'pl-9',
+          active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground'
+        )}
+      >
+        {active && <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-primary" />}
+        <item.icon className={cn('h-5 w-5 shrink-0', active && 'text-primary')} />
+        {!collapsed && <span>{item.name}</span>}
+      </Link>
+    )
+  }
+
   const domain = typeof window !== 'undefined' ? window.location.hostname : ''
 
   const railWidth = collapsed ? 'lg:w-[72px]' : 'lg:w-60'
@@ -98,49 +129,27 @@ export default function DashboardLayout() {
               <PanelLeft className="h-5 w-5" />
             </button>
           )}
-          {visibleNav.map((item) => {
-            const isActive = location.pathname === item.href || location.pathname.startsWith(item.href + '/')
-            return (
-              <Link
-                key={item.href}
-                to={item.href}
-                onClick={() => setMobileOpen(false)}
-                title={collapsed ? item.name : undefined}
-                className={cn(
-                  'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  collapsed && 'justify-center px-0',
-                  isActive
-                    ? 'bg-primary/10 text-foreground'
-                    : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground'
-                )}
-              >
-                {isActive && <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-primary" />}
-                <item.icon className={cn('h-5 w-5 shrink-0', isActive && 'text-primary')} />
-                {!collapsed && <span>{item.name}</span>}
-              </Link>
-            )
-          })}
+          {collapsed
+            ? visibleLeaves.map((item) => renderLink(item))
+            : visibleGroups.map((group) => {
+                if (!group.label) return group.items.map((item) => renderLink(item))
+                const open = isGroupOpen(group)
+                return (
+                  <div key={group.label} className="pt-3 first:pt-0">
+                    <button
+                      onClick={() => toggleGroup(group)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 transition-colors hover:text-foreground"
+                    >
+                      {group.icon && <group.icon className="h-3.5 w-3.5 shrink-0" />}
+                      <span className="flex-1 text-left">{group.label}</span>
+                      <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', !open && '-rotate-90')} />
+                    </button>
+                    {open && <div className="mt-1 space-y-1">{group.items.map((item) => renderLink(item, { indented: true }))}</div>}
+                  </div>
+                )
+              })}
         </nav>
 
-        {/* User footer */}
-        <div className="border-t border-border p-3">
-          <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary font-semibold ring-1 ring-primary/30 shrink-0">
-              {user?.username?.[0]?.toUpperCase() || 'U'}
-            </div>
-            {!collapsed && (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">{user?.username}</p>
-                <p className="truncate text-xs text-muted-foreground">{user?.is_admin ? 'Administrador' : 'Usuário'}</p>
-              </div>
-            )}
-            {!collapsed && (
-              <button onClick={logout} title="Sair" className="text-muted-foreground hover:text-destructive">
-                <LogOut className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
       </aside>
 
       {/* Main */}
@@ -181,12 +190,18 @@ export default function DashboardLayout() {
               <Search className="h-5 w-5" />
             </button>
             {isAdmin && <SystemBell alerts={alerts} />}
-            {isAdmin && (
-              <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium', health.cls)}>
-                <span className={cn('h-1.5 w-1.5 rounded-full', health.dot, status === 'ok' && 'eg-pulse')} />
-                {health.label}
-              </span>
-            )}
+            <div className="ml-1 flex items-center gap-2 border-l border-border pl-3">
+              <div className="hidden text-right leading-tight sm:block">
+                <p className="text-sm font-medium text-foreground">{user?.username}</p>
+                <p className="text-xs text-muted-foreground">{user?.is_admin ? 'Administrador' : 'Usuário'}</p>
+              </div>
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary ring-1 ring-primary/30">
+                {user?.username?.[0]?.toUpperCase() || 'U'}
+              </div>
+              <button onClick={logout} title="Sair" className="text-muted-foreground hover:text-destructive">
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </header>
 
