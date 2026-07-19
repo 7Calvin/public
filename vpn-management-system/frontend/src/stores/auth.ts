@@ -65,13 +65,23 @@ export const useAuthStore = create<AuthState>()(
           const response = await api.post('/auth/refresh', {
             refresh_token: refreshToken,
           })
-          const { access_token, refresh_token, user } = response.data
+          // /auth/refresh returns tokens ONLY (no user). Destructuring `user`
+          // here previously set user=undefined, which downgraded an admin to a
+          // non-admin nav until a full reload. Keep the tokens, then (re)load the
+          // user from /auth/me so is_admin etc. are populated.
+          const { access_token, refresh_token } = response.data
           set({
             accessToken: access_token,
             refreshToken: refresh_token,
-            user,
             isAuthenticated: true,
           })
+          try {
+            const me = await api.get('/auth/me')
+            set({ user: me.data })
+          } catch {
+            // Backend still coming up (e.g. right after an update): keep the
+            // existing user rather than blanking the menu; checkAuth/interceptor retries.
+          }
         } catch {
           get().logout()
         }
