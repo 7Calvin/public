@@ -62,7 +62,7 @@ export function useSystemStatus() {
 
   const alerts: SystemAlert[] = []
   if (upd?.update_available) {
-    alerts.push({ level: 'info', text: `Atualização ${upd.latest ? 'v' + upd.latest : 'nova'} disponível`, href: '/settings' })
+    alerts.push({ level: 'info', text: `Atualização ${upd.latest ? 'v' + upd.latest : 'nova'} disponível`, href: '/settings?tab=sistema' })
   }
   if (vpn && vpn.is_running === false) {
     alerts.push({ level: 'down', text: 'Servidor OpenVPN parado', href: '/vpn' })

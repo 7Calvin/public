@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { systemApi, type UpdateStatus } from '@/api/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import {
   RefreshCw,
@@ -10,6 +11,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Server,
+  Database,
+  ShieldCheck,
 } from 'lucide-react'
 
 interface VersionInfo {
@@ -38,6 +41,8 @@ export default function SystemUpdateCard() {
   const [checking, setChecking] = useState(false)
   const [status, setStatus] = useState<UpdateStatus | null>(null)
   const [polling, setPolling] = useState(false)
+  // Which confirmation modal is open (replaces the native window.confirm()).
+  const [confirm, setConfirm] = useState<null | 'update' | 'regen'>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
@@ -117,10 +122,8 @@ export default function SystemUpdateCard() {
     }
   }
 
-  const handleUpdate = async () => {
-    if (!confirm('Iniciar a atualização completa do sistema? Os serviços serão reconstruídos. Certificados do OpenVPN são preservados.')) {
-      return
-    }
+  const runUpdate = async () => {
+    setConfirm(null)
     try {
       await systemApi.startUpdate({ backup: true, run_migrations: true })
       setStatus({ state: 'running', pct: 1, message: 'Iniciando atualização…' })
@@ -134,10 +137,8 @@ export default function SystemUpdateCard() {
     }
   }
 
-  const handleRegenOpenvpn = async () => {
-    if (!confirm('Regenerar o server.conf do OpenVPN a partir do template? Isso descarta edições manuais do server.conf. Os certificados/PKI são preservados.')) {
-      return
-    }
+  const runRegenOpenvpn = async () => {
+    setConfirm(null)
     try {
       await systemApi.regenerateOpenvpnConfig()
       toast({ title: 'OpenVPN', description: 'Configuração regenerada; PKI preservado.' })
@@ -153,7 +154,10 @@ export default function SystemUpdateCard() {
   const updateAvailable = latest?.update_available
   const running = polling || status?.state === 'running'
 
+  const targetVersion = latest?.latest ?? latest?.target
+
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -246,11 +250,11 @@ export default function SystemUpdateCard() {
             <RefreshCw className={'h-4 w-4 ' + (checking ? 'animate-spin' : '')} />
             Verificar atualizações
           </Button>
-          <Button onClick={handleUpdate} disabled={running} className="gap-2">
+          <Button onClick={() => setConfirm('update')} disabled={running} className="gap-2">
             <Download className="h-4 w-4" />
             {running ? 'Atualizando…' : 'Atualizar agora'}
           </Button>
-          <Button variant="ghost" onClick={handleRegenOpenvpn} disabled={running} className="gap-2">
+          <Button variant="ghost" onClick={() => setConfirm('regen')} disabled={running} className="gap-2">
             <RotateCcw className="h-4 w-4" />
             Regenerar config OpenVPN
           </Button>
@@ -263,5 +267,73 @@ export default function SystemUpdateCard() {
         </p>
       </CardContent>
     </Card>
+
+    {/* Update confirmation modal (replaces the native confirm dialog) */}
+    <Dialog open={confirm === 'update'} onOpenChange={(o) => !o && setConfirm(null)}>
+      <DialogContent onClose={() => setConfirm(null)}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5 text-primary" />
+            Atualizar o sistema
+          </DialogTitle>
+          <DialogDescription>
+            {targetVersion ? (
+              <>Atualizar da <span className="font-mono font-medium text-foreground">v{version?.current ?? '—'}</span> para a{' '}
+              <span className="font-mono font-medium text-foreground">{targetVersion}</span>. O que vai acontecer:</>
+            ) : (
+              <>Reconstruir os serviços na versão mais recente disponível. O que vai acontecer:</>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <ul className="my-2 space-y-2.5 text-sm">
+          <li className="flex items-start gap-2.5">
+            <Database className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <span><span className="font-medium text-foreground">Backup automático</span> do banco e da PKI do OpenVPN antes de tudo.</span>
+          </li>
+          <li className="flex items-start gap-2.5">
+            <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <span>Serviços <span className="font-medium text-foreground">reconstruídos</span> e <span className="font-medium text-foreground">migrações</span> do banco aplicadas — pode haver uma breve indisponibilidade.</span>
+          </li>
+          <li className="flex items-start gap-2.5">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+            <span><span className="font-medium text-foreground">Rollback automático</span> se o health-check falhar. Certificados/PKI são preservados.</span>
+          </li>
+        </ul>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setConfirm(null)}>Cancelar</Button>
+          <Button onClick={runUpdate} className="gap-2">
+            <Download className="h-4 w-4" />
+            Atualizar agora
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Regenerate OpenVPN config confirmation */}
+    <Dialog open={confirm === 'regen'} onOpenChange={(o) => !o && setConfirm(null)}>
+      <DialogContent onClose={() => setConfirm(null)}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <RotateCcw className="h-5 w-5 text-primary" />
+            Regenerar config do OpenVPN
+          </DialogTitle>
+          <DialogDescription>
+            Recria o <span className="font-mono text-foreground">server.conf</span> a partir do template.
+            Isso <span className="font-medium text-foreground">descarta edições manuais</span> do arquivo.
+            Os certificados/PKI são preservados.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setConfirm(null)}>Cancelar</Button>
+          <Button onClick={runRegenOpenvpn} className="gap-2">
+            <RotateCcw className="h-4 w-4" />
+            Regenerar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
