@@ -127,6 +127,7 @@ class ConnectionService:
         user: User,
         vpn_profile: Optional[VPNProfile],
         source_ip: str,
+        vpn_ip: Optional[str] = None,
         client_version: Optional[str] = None,
         os_info: Optional[str] = None
     ) -> Tuple[Optional[Connection], Optional[str]]:
@@ -134,7 +135,11 @@ class ConnectionService:
         Record a new VPN connection.
 
         Called when a client connects to the VPN server.
-        vpn_profile can be None in simplified mode (password-only auth).
+        vpn_profile can be None in simplified mode (password-only auth) — e.g. an
+        AD/LDAP user with no local profile. In that case ``vpn_ip`` (the address
+        OpenVPN actually assigned, passed by the client-connect hook) is the only
+        source for the tunnel IP; without it the disconnect hook — which matches
+        the connection by vpn_ip — can't find the row, so duration/bytes are lost.
         """
         # Close any stale active connections for this user
         # This handles cases where the container restarted or client reconnected
@@ -156,7 +161,9 @@ class ConnectionService:
             user_id=user.id,
             vpn_profile_id=vpn_profile.id if vpn_profile else None,
             source_ip=source_ip,
-            vpn_ip=str(vpn_profile.assigned_ip) if vpn_profile else None,
+            # Prefer the address OpenVPN actually assigned; fall back to the
+            # profile's static assignment when the hook didn't provide one.
+            vpn_ip=vpn_ip or (str(vpn_profile.assigned_ip) if vpn_profile else None),
             status=ConnectionStatus.ACTIVE,
             client_version=client_version,
             os_info=os_info,

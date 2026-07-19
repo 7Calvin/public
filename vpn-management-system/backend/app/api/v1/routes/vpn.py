@@ -669,7 +669,8 @@ async def vpn_client_connected(
     connection, error = await connection_service.record_connection(
         user=user,
         vpn_profile=profile,  # Can be None in simplified mode
-        source_ip=data.client_ip
+        source_ip=data.client_ip,
+        vpn_ip=data.vpn_ip,  # OpenVPN-assigned IP; required so disconnect can match AD users
     )
 
     if error:
