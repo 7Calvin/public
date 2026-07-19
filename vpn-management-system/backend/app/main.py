@@ -1,5 +1,5 @@
 """
-VPN Management System - Main Application
+EdgeGate - Main Application
 """
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -240,7 +240,20 @@ async def startup_event():
                         if not ok:
                             logger.warning("Bandwidth sampler: live status query failed; skipping this round")
                         else:
-                            await svc.record_bandwidth_sample(live=live)
+                            from datetime import datetime, timezone
+                            now = datetime.now(timezone.utc)
+                            await svc.record_bandwidth_sample(live=live, recorded_at=now)
+                            # IPsec throughput: sum StrongSwan per-tunnel byte counters,
+                            # sharing the OpenVPN sample's timestamp so "total" aligns.
+                            try:
+                                from app.services.ipsec_service import IPsecService
+                                ipsec_status = await IPsecService(db).get_status()
+                                if ipsec_status.get("strongswan_running"):
+                                    await svc.record_ipsec_bandwidth_sample(
+                                        ipsec_status.get("connections", []), recorded_at=now
+                                    )
+                            except Exception as e:  # noqa: BLE001
+                                logger.debug(f"IPsec bandwidth sample skipped: {e}")
                             reconciled = await svc.reconcile_active_connections(live)
                             await svc.prune_bandwidth_samples(retention_hours)
                             await db.commit()

@@ -101,6 +101,7 @@ class ThroughputPoint(BaseModel):
 class ThroughputResponse(BaseModel):
     """Throughput time-series for the dashboard chart"""
     window: str  # 1h, 6h, 24h, 7d
+    source: str = "openvpn"  # openvpn | ipsec | total
     points: List[ThroughputPoint]
 
 

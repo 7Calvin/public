@@ -548,13 +548,19 @@ class ConnectionService:
 
     # ==================== Bandwidth Time-Series ====================
 
-    async def record_bandwidth_sample(self, live: Optional[List[dict]] = None) -> BandwidthSample:
+    async def record_bandwidth_sample(
+        self,
+        live: Optional[List[dict]] = None,
+        recorded_at: Optional[datetime] = None,
+    ) -> BandwidthSample:
         """Snapshot current server-wide cumulative byte counters from OpenVPN.
 
         Sums the live per-client counters from the management interface and
         stores them as one time-series row. Throughput for an interval is later
         computed as the delta between two consecutive snapshots. Pass ``live``
         to reuse an already-fetched status list (avoids a second round-trip).
+        Pass ``recorded_at`` to align this row's timestamp with a sibling sample
+        (e.g. the matching IPsec snapshot from the same tick).
         """
         if live is None:
             live = await self.get_live_connections_from_server()
@@ -565,6 +571,38 @@ class ConnectionService:
             cum_bytes_sent=cum_sent,
             cum_bytes_received=cum_received,
             active_clients=len(live),
+            source="openvpn",
+            **({"recorded_at": recorded_at} if recorded_at is not None else {}),
+        )
+        self.db.add(sample)
+        return sample
+
+    async def record_ipsec_bandwidth_sample(
+        self,
+        connections: List[dict],
+        recorded_at: Optional[datetime] = None,
+    ) -> BandwidthSample:
+        """Snapshot cumulative IPsec byte counters, summed across all tunnels.
+
+        ``connections`` is the list from ``IPsecService.get_status()`` — each
+        entry carries per-child-SA ``bytes_in`` / ``bytes_out`` parsed from
+        StrongSwan. Note StrongSwan resets these on rekey; the throughput query
+        clamps negative deltas to 0, same as OpenVPN counter resets.
+
+        Direction is normalised to the OpenVPN convention used by the chart:
+          bytes_sent     = server -> peers  (StrongSwan bytes_out)
+          bytes_received = peers  -> server (StrongSwan bytes_in)
+        """
+        cum_sent = sum(int(c.get("bytes_out") or 0) for c in connections)
+        cum_received = sum(int(c.get("bytes_in") or 0) for c in connections)
+        active = sum(1 for c in connections if c.get("tunnel_status") == "UP")
+
+        sample = BandwidthSample(
+            cum_bytes_sent=cum_sent,
+            cum_bytes_received=cum_received,
+            active_clients=active,
+            source="ipsec",
+            **({"recorded_at": recorded_at} if recorded_at is not None else {}),
         )
         self.db.add(sample)
         return sample
@@ -621,13 +659,16 @@ class ConnectionService:
 
         return count
 
-    async def get_throughput(self, window: str = "24h") -> dict:
+    async def get_throughput(self, window: str = "24h", source: str = "openvpn") -> dict:
         """Build the throughput time-series for the dashboard chart.
 
         Returns one point per sampling interval, where each point's bytes are
         the delta between consecutive cumulative snapshots. Counter resets (a
-        client reconnecting or disconnecting drops its cumulative bytes out of
-        the server-wide sum) are clamped to 0 so the chart never dips negative.
+        client reconnecting/disconnecting, or an IPsec rekey) are clamped to 0
+        so the chart never dips negative.
+
+        ``source`` selects the technology: "openvpn", "ipsec", or "total" (the
+        per-timestamp sum of both — samples share a recorded_at within a tick).
         """
         window_map = {
             "1h": timedelta(hours=1),
@@ -637,27 +678,40 @@ class ConnectionService:
         }
         start_time = datetime.now(timezone.utc) - window_map.get(window, timedelta(hours=24))
 
-        result = await self.db.execute(
-            select(BandwidthSample)
-            .where(BandwidthSample.recorded_at >= start_time)
-            .order_by(BandwidthSample.recorded_at.asc())
-        )
-        samples = result.scalars().all()
+        async def series_for(src: str) -> list[dict]:
+            result = await self.db.execute(
+                select(BandwidthSample)
+                .where(BandwidthSample.recorded_at >= start_time, BandwidthSample.source == src)
+                .order_by(BandwidthSample.recorded_at.asc())
+            )
+            samples = result.scalars().all()
+            pts = []
+            prev = None
+            for s in samples:
+                if prev is not None:
+                    out = int(s.cum_bytes_sent) - int(prev.cum_bytes_sent)
+                    inbound = int(s.cum_bytes_received) - int(prev.cum_bytes_received)
+                    pts.append({
+                        "timestamp": s.recorded_at,
+                        "bytes_sent": out if out > 0 else 0,
+                        "bytes_received": inbound if inbound > 0 else 0,
+                    })
+                prev = s
+            return pts
 
-        points = []
-        prev = None
-        for s in samples:
-            if prev is not None:
-                out = int(s.cum_bytes_sent) - int(prev.cum_bytes_sent)
-                inbound = int(s.cum_bytes_received) - int(prev.cum_bytes_received)
-                points.append({
-                    "timestamp": s.recorded_at,
-                    "bytes_sent": out if out > 0 else 0,
-                    "bytes_received": inbound if inbound > 0 else 0,
-                })
-            prev = s
+        if source == "total":
+            merged: dict = {}
+            for src in ("openvpn", "ipsec"):
+                for p in await series_for(src):
+                    key = p["timestamp"]
+                    agg = merged.setdefault(key, {"timestamp": key, "bytes_sent": 0, "bytes_received": 0})
+                    agg["bytes_sent"] += p["bytes_sent"]
+                    agg["bytes_received"] += p["bytes_received"]
+            points = [merged[k] for k in sorted(merged.keys())]
+        else:
+            points = await series_for(source if source in ("openvpn", "ipsec") else "openvpn")
 
-        return {"window": window, "points": points}
+        return {"window": window, "source": source, "points": points}
 
     async def get_user_stats(self, user_id: UUID) -> dict:
         """Get statistics for a specific user"""
