@@ -270,6 +270,21 @@ export default function IPsecPage() {
     },
   })
 
+  const [confirmRestartSS, setConfirmRestartSS] = useState(false)
+  const restartSSMutation = useMutation({
+    mutationFn: () => ipsecApi.restartStrongSwan(),
+    onSuccess: () => {
+      setConfirmRestartSS(false)
+      queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
+      queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
+      toast({ title: 'StrongSwan reiniciado' })
+    },
+    onError: (error: any) => {
+      setConfirmRestartSS(false)
+      toast({ variant: 'destructive', title: 'Falha ao reiniciar StrongSwan', description: error?.response?.data?.detail })
+    },
+  })
+
   const applyMutation = useMutation({
     mutationFn: () => ipsecApi.apply(),
     onSuccess: () => {
@@ -449,6 +464,10 @@ export default function IPsecPage() {
             >
               <Settings className="h-4 w-4 mr-2" />
               Aplicar Configuração
+            </Button>
+            <Button variant="outline" onClick={() => setConfirmRestartSS(true)}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Reiniciar StrongSwan
             </Button>
             <Button onClick={openAddModal}>
               <Plus className="h-4 w-4 mr-2" />
@@ -1316,6 +1335,25 @@ export default function IPsecPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsLogsModalOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restart StrongSwan confirmation */}
+      <Dialog open={confirmRestartSS} onOpenChange={setConfirmRestartSS}>
+        <DialogContent onClose={() => setConfirmRestartSS(false)}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><RotateCcw className="h-5 w-5 text-primary" /> Reiniciar StrongSwan</DialogTitle>
+            <DialogDescription>
+              Reinicia o serviço IPsec (StrongSwan). Todos os túneis site-to-site caem e renegociam — pode haver alguns segundos de indisponibilidade.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRestartSS(false)}>Cancelar</Button>
+            <Button onClick={() => restartSSMutation.mutate()} disabled={restartSSMutation.isPending} className="gap-2">
+              <RotateCcw className="h-4 w-4" />
+              {restartSSMutation.isPending ? 'Reiniciando…' : 'Reiniciar'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

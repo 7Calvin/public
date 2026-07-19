@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { formatDateTime } from '@/lib/tz'
-import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server, Pencil } from 'lucide-react'
+import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server, Pencil, RefreshCw } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import type { FirewallRule } from '@/types'
 
@@ -177,6 +177,20 @@ export default function FirewallPage() {
       // Silent fail - rules are saved, just not applied to nftables
     }
   }
+
+  const [confirmReapply, setConfirmReapply] = useState(false)
+  const reapplyMutation = useMutation({
+    mutationFn: () => firewallApi.apply(),
+    onSuccess: () => {
+      setConfirmReapply(false)
+      queryClient.invalidateQueries({ queryKey: ['firewall-status'] })
+      toast({ title: 'Regras reaplicadas', description: 'As regras foram reaplicadas no firewall.' })
+    },
+    onError: (error: any) => {
+      setConfirmReapply(false)
+      toast({ variant: 'destructive', title: 'Falha ao reaplicar', description: error?.response?.data?.detail })
+    },
+  })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => firewallApi.deleteRule(id),
@@ -497,7 +511,16 @@ export default function FirewallPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Firewall" subtitle="Regras de acesso da VPN" />
+      <PageHeader
+        title="Firewall"
+        subtitle="Regras de acesso da VPN"
+        actions={
+          <Button variant="outline" onClick={() => setConfirmReapply(true)}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Reaplicar regras
+          </Button>
+        }
+      />
 
       {/* Status */}
       {status && (
@@ -1183,6 +1206,25 @@ export default function FirewallPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reapply firewall rules confirmation */}
+      <Dialog open={confirmReapply} onOpenChange={setConfirmReapply}>
+        <DialogContent onClose={() => setConfirmReapply(false)}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Reaplicar regras</DialogTitle>
+            <DialogDescription>
+              Reescreve e reaplica todas as regras de firewall no sistema. As conexões existentes seguem ativas; use se as regras saíram de sincronia.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmReapply(false)}>Cancelar</Button>
+            <Button onClick={() => reapplyMutation.mutate()} disabled={reapplyMutation.isPending} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              {reapplyMutation.isPending ? 'Reaplicando…' : 'Reaplicar'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
