@@ -83,7 +83,7 @@ def main():
         "/auth/me", "/users", "/users/stats/summary", "/ipsec/status", "/ipsec/connections",
         "/ipsec/server-info", "/proxy/routes", "/proxy/certificates", "/firewall/rules",
         "/firewall/status", "/firewall/quick-rules", "/connections", "/connections/stats/summary",
-        "/vpn/server/config", "/system/version", "/system/info",
+        "/vpn/server/config", "/system/version", "/system/info", "/admin/ldap-settings",
     ]
     for p in reads:
         try:
@@ -164,6 +164,31 @@ def main():
             check("gravar config VPN (mesmo valor)", r.status_code == 200, f"HTTP {r.status_code} {r.text[:150]}")
     except Exception as e:
         check("config round-trip", False, str(e))
+
+    # ---------- LDAP/AD SETTINGS round-trip ----------
+    print("\n[LDAP] round-trip das configurações de AD (sem alterar a senha do bind)")
+    try:
+        cur = c.get("/admin/ldap-settings")
+        if check("ler config LDAP", cur.status_code == 200, f"HTTP {cur.status_code} {cur.text[:150]}"):
+            s = cur.json()
+            # Reescreve os mesmos valores. Omitir bind_password mantém a senha
+            # armazenada; enabled é preservado como está (não liga o AD à toa).
+            payload = {
+                "enabled": s.get("enabled", False),
+                "server": s.get("server"),
+                "port": s.get("port", 389),
+                "use_ntlm": s.get("use_ntlm", True),
+                "ad_domain": s.get("ad_domain"),
+                "bind_dn": s.get("bind_dn"),
+                "search_base": s.get("search_base"),
+                "user_attr": s.get("user_attr", "sAMAccountName"),
+                "required_group_dn": s.get("required_group_dn"),
+                "timeout": s.get("timeout", 5),
+            }
+            r = c.put("/admin/ldap-settings", json=payload)
+            check("gravar config LDAP (mesmos valores)", r.status_code == 200, f"HTTP {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        check("LDAP round-trip", False, str(e))
 
     # ---------- PASSWORD + MFA no usuário temporário ----------
     if uid:

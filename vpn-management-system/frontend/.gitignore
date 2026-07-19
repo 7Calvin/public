@@ -32,5 +32,11 @@ Thumbs.db
 # Testing
 coverage
 
+# Playwright (E2E)
+/test-results
+/playwright-report
+/playwright/.cache
+/e2e/.auth
+
 # TypeScript
 *.tsbuildinfo
