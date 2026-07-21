@@ -137,11 +137,6 @@ export default function IPsecPage() {
     enabled: isConfigPreviewOpen,
   })
 
-  const { data: versionInfo } = useQuery({
-    queryKey: ['ipsec-version'],
-    queryFn: () => ipsecApi.version().then((res) => res.data),
-  })
-
   const { data: serverInfo } = useQuery<ServerInfo>({
     queryKey: ['ipsec-server-info'],
     queryFn: () => ipsecApi.serverInfo().then((res) => res.data),
@@ -478,15 +473,13 @@ export default function IPsecPage() {
       />
 
       {/* Status Card */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-card px-4 py-2.5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
         <span className="text-muted-foreground">
           StrongSwan{' '}
           <span className={status?.strongswan_running ? 'text-success font-medium' : 'text-destructive'}>
             {status?.strongswan_running ? 'Em execução' : 'Parado'}
           </span>
-        </span>
-        <span className="text-muted-foreground">
-          Versão <span className="text-foreground">{versionInfo?.version || 'Desconhecida'}</span>
         </span>
         <span className="text-muted-foreground">
           Total de Conexões <span className="text-foreground">{status?.total_connections || 0}</span>
@@ -497,7 +490,8 @@ export default function IPsecPage() {
         <span className="text-muted-foreground">
           Configurados <span className="text-foreground">{connections.length}</span>
         </span>
-        <div className="ml-auto flex items-center gap-2">
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="outline"
             size="sm"
