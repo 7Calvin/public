@@ -196,6 +196,19 @@ if [ -n "$INSTALLED_VERSION" ] && [ -n "$TARGET_VERSION" ] && [ "$INSTALLED_VERS
 fi
 [ "$IS_DOWNGRADE" = "1" ] && echo "Rollback detected: v${INSTALLED_VERSION} -> v${TARGET_VERSION}" >> "$LOG_FILE"
 
+# ==================== Rollback floor: the swanctl migration is one-way ====================
+# v${SWANCTL_FLOOR} migrated the HOST IPsec daemon from legacy strongswan-starter to
+# swanctl/vici. Rolling back below it would leave a swanctl-mode host running legacy
+# code -> broken IPsec, and we do NOT auto-revert the daemon. Block it up front with a
+# clear message (the user explicitly chose to treat this rollback as denied).
+SWANCTL_FLOOR="${SWANCTL_FLOOR:-1.5.0}"
+_ver_lt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]; }
+_host_is_swanctl() { systemctl is-active --quiet strongswan 2>/dev/null && [ -S /var/run/charon.vici ]; }
+if [ "$IS_DOWNGRADE" = "1" ] && [ -n "$TARGET_VERSION" ] \
+   && _ver_lt "$TARGET_VERSION" "$SWANCTL_FLOOR" && _host_is_swanctl; then
+    fail 20 "Rollback to v${TARGET_VERSION} is blocked: it predates the swanctl IPsec migration (v${SWANCTL_FLOOR}) and the host IPsec daemon cannot be auto-reverted to legacy strongSwan. Restore from a pre-swanctl backup, or revert the daemon manually per docs/ipsec-ha-failover.md, before installing an older version."
+fi
+
 # ==================== Sync application files ====================
 # NOTE: docker-compose.yml and config/.env are NOT synced here — structural
 # compose changes go through install.sh. This keeps the openvpn_data volume
@@ -207,6 +220,55 @@ rsync -a --delete --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_c
     "${SRC}/backend/" "${INSTALL_DIR}/backend/" >> "$LOG_FILE" 2>&1 || fail 30 "backend sync failed"
 rsync -a --delete "${SRC}/docker/" "${INSTALL_DIR}/docker/" >> "$LOG_FILE" 2>&1 || fail 30 "docker sync failed"
 [ -f "${SRC}/VERSION" ] && cp -f "${SRC}/VERSION" "${INSTALL_DIR}/VERSION"
+
+# ==================== Auto-migrate host IPsec to swanctl/vici ====================
+# The synced backend/agent code speaks swanctl, which needs the host strongSwan in
+# swanctl mode (not the legacy strongswan-starter). Switch it idempotently NOW, before
+# rebuilding the containers. The backend regenerates the swanctl config from the DB on
+# its next apply, so existing tunnels migrate automatically (the DB is the source of
+# truth — no ipsec.conf parsing needed). Never fatal: IPsec is one subsystem.
+_refresh_ipsec_agent() {
+    # The ipsec-agent runs from ${INSTALL_DIR}/ipsec-agent (a host service), which the
+    # file sync does NOT touch. Adopt the just-synced swanctl version + restart it.
+    local src="${INSTALL_DIR}/docker/ipsec-agent/app.py"
+    local dst="${INSTALL_DIR}/ipsec-agent/app.py"
+    if [ -f "$src" ] && [ -d "${INSTALL_DIR}/ipsec-agent" ] && ! cmp -s "$src" "$dst" 2>/dev/null; then
+        cp -f "$src" "${dst}.new" && mv -f "${dst}.new" "$dst" \
+            && systemctl restart ipsec-agent >> "$LOG_FILE" 2>&1 \
+            && echo "ipsec-agent refreshed to swanctl" >> "$LOG_FILE" || true
+    fi
+}
+ensure_swanctl_mode() {
+    if systemctl is-active --quiet strongswan 2>/dev/null && [ -S /var/run/charon.vici ]; then
+        # Already swanctl: keep the legacy starter masked, refresh the agent code.
+        systemctl is-enabled strongswan-starter 2>/dev/null | grep -q masked \
+            || systemctl mask strongswan-starter >> "$LOG_FILE" 2>&1 || true
+        _refresh_ipsec_agent
+        return 0
+    fi
+    write_status 38 "running" "Migrating host IPsec to swanctl/vici..."
+    if ! command -v swanctl >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q strongswan-swanctl charon-systemd \
+            >> "$LOG_FILE" 2>&1 || { echo "WARN: swanctl package install failed" >> "$LOG_FILE"; return 1; }
+    fi
+    # Stop + MASK the legacy starter (else `ipsec` CLI / backend polls auto-restart it
+    # and it fights swanctl for the vici socket); kill any orphan legacy charon on 500/4500.
+    systemctl stop strongswan-starter >> "$LOG_FILE" 2>&1 || true
+    systemctl mask strongswan-starter >> "$LOG_FILE" 2>&1 || true
+    pkill -9 -f '/usr/lib/ipsec/' 2>/dev/null || true
+    sleep 1
+    systemctl enable strongswan >> "$LOG_FILE" 2>&1 || true
+    systemctl restart strongswan >> "$LOG_FILE" 2>&1 || true   # (re)creates /var/run/charon.vici
+    sleep 3
+    _refresh_ipsec_agent
+    if [ -S /var/run/charon.vici ] && swanctl --stats >/dev/null 2>&1; then
+        echo "Host migrated to swanctl mode (vici up)" >> "$LOG_FILE"
+        return 0
+    fi
+    echo "WARN: swanctl mode not confirmed after switch" >> "$LOG_FILE"
+    return 1
+}
+ensure_swanctl_mode || echo "WARN: ensure_swanctl_mode non-zero — IPsec may need manual attention" >> "$LOG_FILE"
 
 # ==================== Build BEFORE touching running containers ====================
 # If a build fails here, nothing has been stopped or recreated yet.

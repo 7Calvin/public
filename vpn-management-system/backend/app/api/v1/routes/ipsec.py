@@ -145,8 +145,17 @@ async def update_ipsec_connection(
             detail=error
         )
 
-    # Regenerate and apply so /etc/ipsec.conf reflects the change without a manual
-    # Apply click. Don't fail the request if the agent is down — it's already saved.
+    # Snapshot control values NOW: async SQLAlchemy expires attributes after the
+    # commit inside update_connection, so reading them after the awaits below would
+    # trigger a lazy refresh outside the greenlet -> DetachedInstanceError.
+    conn_name = updated_connection.name
+    tunnel_was_active = bool(
+        updated_connection.is_enabled
+        and updated_connection.status == IPsecStatus.ACTIVE
+    )
+
+    # Regenerate and apply so the running swanctl config reflects the change without a
+    # manual Apply click. Don't fail the request if the agent is down — it's saved.
     applied, apply_err = await service.apply_config()
     if not applied:
         logger.warning(f"Connection updated but config not applied: {apply_err}")
@@ -157,8 +166,8 @@ async def update_ipsec_connection(
 
     # If the tunnel is live, restart it to renegotiate with the new proposal
     # (e.g. a changed Phase 2 / esp_cipher). A reload alone won't renegotiate.
-    if updated_connection.is_enabled and updated_connection.status == IPsecStatus.ACTIVE:
-        await service.restart_connection(updated_connection.name)
+    if tunnel_was_active:
+        await service.restart_connection(conn_name)
 
     return updated_connection
 
@@ -192,6 +201,12 @@ async def delete_ipsec_connection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error
         )
+
+    # Regenerate and apply so the removed connection is unloaded from swanctl
+    # (swanctl --load-all reconciles: it unloads connections no longer in the config).
+    applied, apply_err = await service.apply_config()
+    if not applied:
+        logger.warning(f"Connection deleted but config not reapplied: {apply_err}")
 
     # Refresh NAT gateway so the removed tunnel's subnet is no longer excluded.
     from app.api.v1.routes.firewall import apply_gateway_via_agent
