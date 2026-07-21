@@ -58,17 +58,16 @@ export default function NatGatewayFirewallCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Globe className="h-5 w-5" />
+      <CardHeader className="p-4 pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Globe className="h-4 w-4" />
           NAT Gateway (saída à internet)
         </CardTitle>
-        <CardDescription>
-          Faz este host servir de gateway NAT para uma sub-rede privada alcançar a internet.
-          A interface de saída e as exceções de VPNs IPsec são detectadas automaticamente.
+        <CardDescription className="text-xs">
+          Sub-rede privada masquerada para a internet. Interface e exceções IPsec são automáticas.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         <div
           className={`p-4 rounded-lg border transition-colors ${
             enabled ? 'bg-primary/10 border-primary' : 'bg-muted/50'

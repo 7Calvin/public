@@ -523,53 +523,39 @@ export default function FirewallPage() {
         }
       />
 
-      {/* Status */}
+      {/* Status strip */}
       {status && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Status do Firewall
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Motor</p>
-                <p className="font-medium">{status.engine || 'nftables'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Status</p>
-                <p className={status.is_active ? 'text-success' : 'text-destructive'}>
-                  {status.is_active ? 'Ativo' : 'Inativo'}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Regras Ativas</p>
-                <p>{status.active_rules || 0}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Última Aplicação</p>
-                <p className="text-muted-foreground">
-                  {status.last_applied ? formatDateTime(status.last_applied) : 'Nunca'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-card px-4 py-2.5 text-sm">
+          <span className="flex items-center gap-2 font-medium">
+            <Shield className={`h-4 w-4 ${status.is_active ? 'text-success' : 'text-destructive'}`} />
+            Firewall {status.is_active ? 'ativo' : 'inativo'}
+          </span>
+          <span className="hidden h-4 w-px bg-border sm:block" aria-hidden />
+          <span className="text-muted-foreground">
+            Motor <span className="text-foreground">{status.engine || 'nftables'}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Regras <span className="text-foreground">{status.active_rules || 0}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Última aplicação{' '}
+            <span className="text-foreground">
+              {status.last_applied ? formatDateTime(status.last_applied) : 'nunca'}
+            </span>
+          </span>
+        </div>
       )}
 
       {/* Quick Rules */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5" />
+        <CardHeader className="p-4 pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Zap className="h-4 w-4" />
             Regras Rápidas
           </CardTitle>
-          <CardDescription>Ative regras comuns do firewall OpenVPN com um clique</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
+        <CardContent className="p-4 pt-0">
+          <div className="grid gap-3 md:grid-cols-2">
             {Object.entries(QUICK_RULE_CONFIG).map(([key, config]) => {
               const ruleStatus = quickRules?.[key]
               const isEnabled = ruleStatus?.exists || false
@@ -578,13 +564,13 @@ export default function FirewallPage() {
               return (
                 <div
                   key={key}
-                  className={`p-4 rounded-lg border transition-colors ${
+                  className={`p-3 rounded-lg border transition-colors ${
                     isEnabled ? 'bg-primary/10 border-primary' : 'bg-muted/50'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <Icon className={`h-5 w-5 flex-shrink-0 ${isEnabled ? config.color : 'text-muted-foreground'}`} />
+                      <Icon className={`h-4 w-4 flex-shrink-0 ${isEnabled ? config.color : 'text-muted-foreground'}`} />
                       <div className="min-w-0">
                         <p className="font-medium text-sm">{config.label}</p>
                         <p className="text-xs text-muted-foreground truncate">

@@ -455,30 +455,15 @@ export default function VPNPage() {
                   </div>
                 </div>
 
-                {/* Split DNS (internal domain resolution through the tunnel) */}
+                {/* DNS search domain(s) pushed to clients */}
                 <div className="space-y-3 p-4 border border-border rounded-lg">
                   <div>
-                    <Label className="text-base font-medium">Split DNS (domínio interno)</Label>
+                    <Label className="text-base font-medium">Domínio de busca (DNS)</Label>
                     <p className="text-sm text-muted-foreground">
-                      Resolve apenas os domínios abaixo por um DNS interno através do túnel; o
-                      resto continua usando o DNS do cliente. Ideal para split-tunnel (Redirect
-                      Gateway desligado). Em split-tunnel, o DNS público NÃO é empurrado.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>DNS interno</Label>
-                    <Input
-                      placeholder="10.48.0.10"
-                      value={configForm.internal_dns_server ?? ''}
-                      onChange={(e) =>
-                        setConfigForm({ ...configForm, internal_dns_server: e.target.value })
-                      }
-                      className="max-w-xs"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      IP do servidor DNS que resolve o domínio (precisa ser alcançável pelo túnel,
-                      ex. dentro da rede NAT). Deixe vazio para desabilitar.
+                      Sufixo DNS empurrado aos clientes (ex.: <span className="font-mono">host</span>{' '}
+                      → <span className="font-mono">host.domain.local</span>). Coloque seus resolvers
+                      (ex.: o DNS do AD) em <strong>DNS Servers</strong> acima — o AD resolve os nomes
+                      internos e encaminha o resto.
                     </p>
                   </div>
 
