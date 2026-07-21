@@ -465,6 +465,8 @@ export const proxyApi = {
 
   renewCertificate: (domain: string) => api.post(`/proxy/certificates/${domain}/renew`),
 
+  reissueCertificate: (domain: string) => api.post(`/proxy/certificates/${domain}/reissue`),
+
   deleteCertificate: (domain: string) => api.delete(`/proxy/certificates/${domain}`),
 
   // Management domain
