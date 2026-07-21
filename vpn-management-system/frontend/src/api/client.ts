@@ -327,6 +327,7 @@ export interface NatGatewaySettings {
   network: string | null
   public_interface: string | null
   exclude_networks: string | null
+  auto_excludes?: string[]
   applied?: boolean | null
   agent_message?: string | null
 }

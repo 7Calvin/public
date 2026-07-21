@@ -88,6 +88,10 @@ async def create_ipsec_connection(
     if not applied:
         logger.warning(f"Connection created but config not applied: {apply_err}")
 
+    # Refresh NAT gateway so this tunnel's remote subnet is auto-excluded from masquerade.
+    from app.api.v1.routes.firewall import apply_gateway_via_agent
+    await apply_gateway_via_agent()
+
     return connection
 
 
@@ -147,6 +151,10 @@ async def update_ipsec_connection(
     if not applied:
         logger.warning(f"Connection updated but config not applied: {apply_err}")
 
+    # Refresh NAT gateway so any changed remote subnet stays auto-excluded from masquerade.
+    from app.api.v1.routes.firewall import apply_gateway_via_agent
+    await apply_gateway_via_agent()
+
     # If the tunnel is live, restart it to renegotiate with the new proposal
     # (e.g. a changed Phase 2 / esp_cipher). A reload alone won't renegotiate.
     if updated_connection.is_enabled and updated_connection.status == IPsecStatus.ACTIVE:
@@ -184,6 +192,10 @@ async def delete_ipsec_connection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error
         )
+
+    # Refresh NAT gateway so the removed tunnel's subnet is no longer excluded.
+    from app.api.v1.routes.firewall import apply_gateway_via_agent
+    await apply_gateway_via_agent()
 
     return MessageResponse(message="IPsec connection deleted")
 

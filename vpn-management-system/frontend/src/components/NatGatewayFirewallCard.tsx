@@ -6,14 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { Globe } from 'lucide-react'
+import { Globe, ShieldCheck } from 'lucide-react'
 
 export default function NatGatewayFirewallCard() {
   const { toast } = useToast()
   const [enabled, setEnabled] = useState(false)
   const [network, setNetwork] = useState('')
-  const [exclude, setExclude] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const { data, refetch } = useQuery({
     queryKey: ['nat-gateway'],
@@ -24,16 +22,17 @@ export default function NatGatewayFirewallCard() {
     if (!data) return
     setEnabled(data.enabled)
     setNetwork(data.network ?? '')
-    setExclude(data.exclude_networks ?? '')
   }, [data])
 
+  const autoExcludes = data?.auto_excludes ?? []
+
   const save = useMutation({
-    mutationFn: (payload: { enabled: boolean; network: string; exclude: string }) =>
+    mutationFn: (payload: { enabled: boolean; network: string }) =>
       adminApi.updateNatGateway({
         enabled: payload.enabled,
         network: payload.network || null,
         public_interface: null, // auto-detected by the agent (default route)
-        exclude_networks: payload.exclude || null,
+        exclude_networks: null, // IPsec exceptions are derived automatically
       }),
     onSuccess: (res) => {
       const applied = res.data.applied
@@ -44,7 +43,6 @@ export default function NatGatewayFirewallCard() {
       refetch()
     },
     onError: (error: any) => {
-      // Revert the optimistic toggle on failure.
       if (data) setEnabled(data.enabled)
       toast({
         variant: 'destructive',
@@ -57,7 +55,7 @@ export default function NatGatewayFirewallCard() {
   const toggle = () => {
     const next = !enabled
     setEnabled(next)
-    save.mutate({ enabled: next, network, exclude })
+    save.mutate({ enabled: next, network })
   }
 
   return (
@@ -69,7 +67,7 @@ export default function NatGatewayFirewallCard() {
         </CardTitle>
         <CardDescription>
           Faz este host servir de gateway NAT para uma sub-rede privada alcançar a internet.
-          A interface de saída é detectada automaticamente.
+          A interface de saída e as exceções de VPNs IPsec são detectadas automaticamente.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -115,34 +113,21 @@ export default function NatGatewayFirewallCard() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => save.mutate({ enabled, network, exclude })}
+                onClick={() => save.mutate({ enabled, network })}
                 disabled={save.isPending || !network}
               >
                 Salvar
               </Button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="text-[11px] text-muted-foreground underline"
-            >
-              {showAdvanced ? 'Ocultar avançado' : 'Avançado — exceções (IPsec)'}
-            </button>
-            {showAdvanced && (
-              <div className="space-y-1 pt-1">
-                <Label className="text-xs text-muted-foreground">
-                  Exceções sem masquerade (CIDR, separadas por vírgula)
-                </Label>
-                <Input
-                  value={exclude}
-                  onChange={(e) => setExclude(e.target.value)}
-                  placeholder="192.168.3.0/24"
-                  className="h-9 font-mono text-xs"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Destinos site-to-site (IPsec) que devem manter o IP de origem real. Use "Salvar" para aplicar.
-                </p>
+            {autoExcludes.length > 0 && (
+              <div className="flex items-start gap-2 rounded-md bg-muted/60 p-2 text-[11px] text-muted-foreground">
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                <span>
+                  Isento de NAT automaticamente (VPNs IPsec):{' '}
+                  <span className="font-mono">{autoExcludes.join(', ')}</span>. Novas conexões IPsec
+                  entram sozinhas — o IP de origem real é preservado no túnel.
+                </span>
               </div>
             )}
           </div>

@@ -332,16 +332,32 @@ async def sync_ldap_group(
 
 # ==================== NAT Gateway (host-as-NAT) ====================
 
-def _nat_gateway_to_response(cfg, applied=None, agent_message=None) -> NatGatewayResponse:
+async def _ipsec_auto_excludes(db: AsyncSession) -> list:
+    """Remote subnets of enabled IPsec tunnels — auto-excluded from masquerade."""
+    from sqlalchemy import select
+    from app.models.ipsec import IPsecConnection
+
+    rows = (await db.execute(
+        select(IPsecConnection.right_subnet).where(IPsecConnection.is_enabled.is_(True))
+    )).scalars().all()
+    out = []
+    for val in rows:
+        out += [s.strip() for s in (val or "").split(",") if s.strip()]
+    return list(dict.fromkeys(out))
+
+
+def _nat_gateway_to_response(cfg, auto_excludes=None, applied=None, agent_message=None) -> NatGatewayResponse:
     """Serialize NAT gateway settings; seed from env when no row exists yet."""
     from app.core.config import settings
 
+    auto_excludes = auto_excludes or []
     if cfg is None:
         return NatGatewayResponse(
             enabled=bool(settings.NAT_GATEWAY_NETWORK),
             network=settings.NAT_GATEWAY_NETWORK or None,
             public_interface=settings.PUBLIC_INTERFACE or None,
             exclude_networks=getattr(settings, "NAT_GATEWAY_EXCLUDE", "") or None,
+            auto_excludes=auto_excludes,
             applied=applied,
             agent_message=agent_message,
         )
@@ -350,6 +366,7 @@ def _nat_gateway_to_response(cfg, applied=None, agent_message=None) -> NatGatewa
         network=cfg.network,
         public_interface=cfg.public_interface,
         exclude_networks=cfg.exclude_networks,
+        auto_excludes=auto_excludes,
         applied=applied,
         agent_message=agent_message,
     )
@@ -364,7 +381,7 @@ async def get_nat_gateway(
     from sqlalchemy import select
 
     cfg = (await db.execute(select(NatGatewaySettings).limit(1))).scalar_one_or_none()
-    return _nat_gateway_to_response(cfg)
+    return _nat_gateway_to_response(cfg, auto_excludes=await _ipsec_auto_excludes(db))
 
 
 @router.put("/nat-gateway", response_model=NatGatewayResponse)
@@ -417,6 +434,7 @@ async def update_nat_gateway(
     agent = await apply_gateway_via_agent()
     return _nat_gateway_to_response(
         cfg,
+        auto_excludes=await _ipsec_auto_excludes(db),
         applied=bool(agent.get("success")),
         agent_message=agent.get("error"),
     )

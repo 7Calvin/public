@@ -166,15 +166,36 @@ def resolve_interface(configured):
     return detect_public_interface() or PUBLIC_INTERFACE or 'eth0'
 
 
+def get_ipsec_excludes(cur):
+    """Remote subnets of enabled IPsec site-to-site tunnels.
+
+    These are auto-excluded from masquerade so the peer keeps seeing the real
+    source IP (the IPsec traffic selectors match on the actual addresses). This is
+    why a new IPsec connection needs no manual NAT exception — establishing the
+    tunnel is enough. Read within an existing DB cursor.
+    """
+    nets = []
+    try:
+        cur.execute("SELECT right_subnet FROM ipsec_connections WHERE is_enabled = true")
+        for r in cur.fetchall():
+            val = r.get('right_subnet') if isinstance(r, dict) else r[0]
+            nets += [s.strip() for s in (val or '').split(',') if s.strip()]
+    except Exception as e:  # table missing, DB error, etc.
+        logger.info(f"IPsec exclude read failed ({e})")
+    return nets
+
+
 def get_gateway_config():
     """Return (network, iface, exclude_list) for the host-as-NAT-gateway.
 
     Prefers the DB row (``nat_gateway_settings``, managed from the admin UI) and
     falls back to the NAT_GATEWAY_NETWORK / PUBLIC_INTERFACE / NAT_GATEWAY_EXCLUDE
     env vars so existing env-only deploys keep working. The interface is
-    auto-detected from the default route when not explicitly set. Returns
+    auto-detected from the default route when not explicitly set. The exclude list
+    always includes the remote subnets of enabled IPsec tunnels (auto). Returns
     (None, iface, []) when gateway NAT is not configured anywhere.
     """
+    ipsec_excl = []
     try:
         conn = get_db_connection()
         try:
@@ -184,17 +205,20 @@ def get_gateway_config():
                 "FROM nat_gateway_settings LIMIT 1"
             )
             row = cur.fetchone()
+            ipsec_excl = get_ipsec_excludes(cur)
         finally:
             conn.close()
         if row and row.get('enabled') and (row.get('network') or '').strip():
             iface = resolve_interface(row.get('public_interface'))
-            excl = [s.strip() for s in (row.get('exclude_networks') or '').split(',') if s.strip()]
+            manual = [s.strip() for s in (row.get('exclude_networks') or '').split(',') if s.strip()]
+            excl = list(dict.fromkeys(manual + ipsec_excl))  # dedup, keep order
             return row['network'].strip(), iface, excl
     except Exception as e:  # table missing before migration, DB down, etc.
         logger.info(f"Gateway config DB read failed ({e}); falling back to env")
 
     if NAT_GATEWAY_NETWORK:
-        excl = [s.strip() for s in NAT_GATEWAY_EXCLUDE.split(',') if s.strip()]
+        manual = [s.strip() for s in NAT_GATEWAY_EXCLUDE.split(',') if s.strip()]
+        excl = list(dict.fromkeys(manual + ipsec_excl))
         return NAT_GATEWAY_NETWORK, resolve_interface(PUBLIC_INTERFACE), excl
     return None, resolve_interface(PUBLIC_INTERFACE), []
 

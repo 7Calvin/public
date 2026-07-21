@@ -1,7 +1,7 @@
 """
 Schemas for the host-as-NAT-gateway settings (admin-managed).
 """
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -19,6 +19,9 @@ class NatGatewayResponse(BaseModel):
     network: Optional[str] = None
     public_interface: Optional[str] = None
     exclude_networks: Optional[str] = None
+    # Remote subnets of enabled IPsec tunnels, auto-excluded from masquerade
+    # (read-only — the user never types these).
+    auto_excludes: List[str] = Field(default_factory=list)
     # Populated on PUT: whether the nat-agent (re)applied the rules.
     applied: Optional[bool] = None
     agent_message: Optional[str] = None
