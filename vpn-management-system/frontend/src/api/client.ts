@@ -313,6 +313,29 @@ export const adminApi = {
     api.put<LdapSettings>('/admin/ldap-settings', data),
   testLdapSettings: (data: LdapTestRequest) =>
     api.post<LdapTestResult>('/admin/ldap-settings/test', data),
+  syncLdapGroup: (params: { delete_mode: string; dry_run: boolean }) =>
+    api.post<LdapSyncResult>('/admin/ldap-settings/sync-group', null, { params }),
+
+  // NAT gateway (host-as-NAT)
+  getNatGateway: () => api.get<NatGatewaySettings>('/admin/nat-gateway'),
+  updateNatGateway: (data: NatGatewayUpdate) =>
+    api.put<NatGatewaySettings>('/admin/nat-gateway', data),
+}
+
+export interface NatGatewaySettings {
+  enabled: boolean
+  network: string | null
+  public_interface: string | null
+  exclude_networks: string | null
+  applied?: boolean | null
+  agent_message?: string | null
+}
+
+export interface NatGatewayUpdate {
+  enabled: boolean
+  network?: string | null
+  public_interface?: string | null
+  exclude_networks?: string | null
 }
 
 export interface LdapSettings {
@@ -357,6 +380,20 @@ export interface LdapTestRequest {
 export interface LdapTestResult {
   success: boolean
   message: string | null
+}
+
+export interface LdapSyncResult {
+  success: boolean
+  message: string | null
+  dry_run: boolean
+  delete_mode: string
+  total_in_group: number
+  added: number
+  removed: number
+  reactivated: number
+  skipped: number
+  added_users: string[]
+  removed_users: string[]
 }
 
 // Proxy API (Reverse Proxy / Traefik)

@@ -94,6 +94,138 @@ class LdapService:
         return await run_in_threadpool(self._test_simple, conf)
 
     # ------------------------------------------------------------------ #
+    # Group sync (mirror AD group members -> local shadow users)         #
+    # ------------------------------------------------------------------ #
+
+    async def enumerate_group_members(self):
+        """List every member of the required VPN group (nested resolved).
+
+        Returns (members, error) where members is a list of dicts
+        {username, email, display_name, disabled}. Reuses the same signed NTLM /
+        simple bind machinery as authenticate(), just without the per-user filter.
+        """
+        cfg = await self.get_settings()
+        if not cfg or not cfg.is_active:
+            return None, "LDAP is not enabled"
+        if not cfg.required_group_dn:
+            return None, "No VPN group configured"
+
+        if cfg.use_ntlm:
+            try:
+                return await self._enumerate_ntlm(cfg)
+            except asyncio.TimeoutError:
+                return None, "LDAP server timeout"
+            except Exception as exc:  # noqa: BLE001
+                logger.error("LDAP NTLM group enumeration error: %s", exc)
+                return None, f"LDAP error: {exc}"
+        conf = self._simple_conf(cfg)
+        return await run_in_threadpool(self._enumerate_simple, conf)
+
+    async def sync_group(self, delete_mode: str = "deactivate", dry_run: bool = False) -> dict:
+        """Mirror the AD group into local shadow users.
+
+        - Creates a shadow user (auth_source=AD) for every group member missing locally.
+        - Reactivates AD users that were disabled locally but are back in the group.
+        - For local AD users that left the group, applies ``delete_mode``:
+            "deactivate" (default, reversible) -> is_active = False
+            "delete"                            -> hard delete (cascades profile/conns)
+            "keep"                              -> leave untouched
+        NEVER touches LOCAL users, admins or service accounts. If the group
+        enumeration returns zero members, removals are SKIPPED (safety guard so a
+        transient LDAP failure can't wipe everyone). ``dry_run=True`` previews only.
+        """
+        from app.models.user import User, AuthSource, UserType
+
+        summary = {
+            "success": False, "message": None, "dry_run": dry_run,
+            "delete_mode": delete_mode, "total_in_group": 0,
+            "added": 0, "removed": 0, "reactivated": 0, "skipped": 0,
+            "added_users": [], "removed_users": [],
+        }
+
+        members, err = await self.enumerate_group_members()
+        if err:
+            summary["message"] = err
+            return summary
+
+        members = members or []
+        summary["total_in_group"] = len(members)
+        group_usernames = {
+            (m.get("username") or "").lower() for m in members if m.get("username")
+        }
+
+        existing_ad = (await self.db.execute(
+            select(User).where(User.auth_source == AuthSource.AD)
+        )).scalars().all()
+        existing_by_name = {u.username.lower(): u for u in existing_ad}
+
+        # ---- add / reactivate / refresh email ----
+        for m in members:
+            uname = (m.get("username") or "").lower()
+            if not uname:
+                continue
+            u = existing_by_name.get(uname)
+            if u is None:
+                # Never clobber an existing LOCAL user that happens to share the name.
+                clash = (await self.db.execute(
+                    select(User).where(User.username == uname)
+                )).scalar_one_or_none()
+                if clash is not None:
+                    summary["skipped"] += 1
+                    continue
+                if not dry_run:
+                    self.db.add(User(
+                        username=uname,
+                        email=m.get("email"),
+                        password_hash=None,
+                        user_type=UserType.HUMAN,
+                        auth_source=AuthSource.AD,
+                        is_active=True,
+                    ))
+                summary["added"] += 1
+                summary["added_users"].append(uname)
+            else:
+                if m.get("email") and u.email != m.get("email") and not dry_run:
+                    u.email = m.get("email")
+                if not u.is_active:
+                    if not dry_run:
+                        u.is_active = True
+                    summary["reactivated"] += 1
+
+        # ---- remove those who left the group (guarded) ----
+        if group_usernames and delete_mode != "keep":
+            for uname, u in existing_by_name.items():
+                if uname in group_usernames:
+                    continue
+                if u.is_admin or u.user_type == UserType.SERVICE:
+                    summary["skipped"] += 1
+                    continue
+                if delete_mode == "delete":
+                    if not dry_run:
+                        await self.db.delete(u)
+                    summary["removed"] += 1
+                    summary["removed_users"].append(uname)
+                elif delete_mode == "deactivate":
+                    if u.is_active:
+                        if not dry_run:
+                            u.is_active = False
+                        summary["removed"] += 1
+                        summary["removed_users"].append(uname)
+
+        if dry_run:
+            await self.db.rollback()
+        else:
+            await self.db.commit()
+
+        summary["success"] = True
+        verb = "removed" if delete_mode == "delete" else "deactivated"
+        summary["message"] = (
+            f"{summary['added']} added, {summary['removed']} {verb}, "
+            f"{summary['reactivated']} reactivated, {summary['skipped']} skipped"
+        )
+        return summary
+
+    # ------------------------------------------------------------------ #
     # Config helpers                                                     #
     # ------------------------------------------------------------------ #
 
@@ -242,6 +374,45 @@ class LdapService:
             pass
         return True, None
 
+    async def _enumerate_ntlm(self, cfg: LdapSettings):
+        timeout = cfg.timeout or 5
+        domain = self._netbios(cfg.bind_dn, cfg.ad_domain, cfg.search_base)
+        svc_domain, svc_user = self._split_bind(cfg.bind_dn, domain)
+
+        client, err = await self._ntlm_client(
+            cfg.server, cfg.port, svc_domain, svc_user, cfg.bind_password, timeout
+        )
+        if err:
+            logger.error("LDAP NTLM service bind failed (enumerate): %s", err)
+            return None, "Directory bind failed (service account)"
+
+        members = []
+        try:
+            search_filter = (
+                f"(&(objectCategory=person)(objectClass=user)"
+                f"(memberOf:{MATCHING_RULE_IN_CHAIN}:={cfg.required_group_dn}))"
+            )
+            async for entry, e in client.pagedsearch(
+                search_filter,
+                ["sAMAccountName", "mail", "displayName", "userAccountControl"],
+            ):
+                if e:
+                    logger.error("LDAP NTLM group search error: %s", e)
+                    return None, "Directory search error"
+                if not entry:
+                    continue
+                attrs = entry.get("attributes", entry) or {}
+                m = self._member_from_attrs(attrs)
+                if m:
+                    members.append(m)
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:  # noqa: BLE001
+                pass
+        logger.info("LDAP NTLM group enumeration: %d member(s)", len(members))
+        return members, None
+
     # ------------------------------------------------------------------ #
     # Simple (unsigned) bind — ldap3, blocking (run in threadpool)       #
     # ------------------------------------------------------------------ #
@@ -331,3 +502,59 @@ class LdapService:
             return False, f"Connection error: {exc}"
         except Exception as exc:  # noqa: BLE001
             return False, f"Connection error: {exc}"
+
+    @classmethod
+    def _member_from_attrs(cls, attrs: dict):
+        """Normalize an AD user entry into {username, email, display_name, disabled}."""
+        username = cls._first(attrs.get("sAMAccountName"))
+        if not username:
+            return None
+        uac = attrs.get("userAccountControl")
+        if isinstance(uac, (list, tuple)):
+            uac = uac[0] if uac else None
+        try:
+            disabled = bool(int(uac) & 0x2) if uac is not None else False
+        except (TypeError, ValueError):
+            disabled = False
+        return {
+            "username": username,
+            "email": cls._first(attrs.get("mail")),
+            "display_name": cls._first(attrs.get("displayName")),
+            "disabled": disabled,
+        }
+
+    @classmethod
+    def _enumerate_simple(cls, conf: dict):
+        import ldap3
+
+        try:
+            conn = cls._connect(conf)
+            if not conn.bind():
+                logger.error("LDAP simple service bind failed (enumerate): %s", conn.result)
+                return None, "Directory bind failed (service account)"
+
+            search_filter = (
+                f"(&(objectCategory=person)(objectClass=user)"
+                f"(memberOf:{MATCHING_RULE_IN_CHAIN}:={conf['required_group_dn']}))"
+            )
+            members = []
+            for entry in conn.extend.standard.paged_search(
+                search_base=conf["search_base"], search_filter=search_filter,
+                search_scope=ldap3.SUBTREE,
+                attributes=["sAMAccountName", "mail", "displayName", "userAccountControl"],
+                paged_size=500, generator=True,
+            ):
+                if entry.get("type") != "searchResEntry":
+                    continue
+                m = cls._member_from_attrs(entry.get("attributes", {}) or {})
+                if m:
+                    members.append(m)
+            conn.unbind()
+            logger.info("LDAP simple group enumeration: %d member(s)", len(members))
+            return members, None
+        except ldap3.core.exceptions.LDAPException as exc:
+            logger.error("LDAP simple group enumeration error: %s", exc)
+            return None, f"LDAP error: {exc}"
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Unexpected LDAP group enumeration error: %s", exc)
+            return None, f"LDAP error: {exc}"

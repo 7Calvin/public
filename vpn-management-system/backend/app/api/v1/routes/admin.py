@@ -9,13 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.user import User
 from app.models.ldap_settings import LdapSettings
+from app.models.nat_gateway_settings import NatGatewaySettings
 from app.dependencies.auth import require_admin
+from app.schemas.nat_gateway import NatGatewayUpdate, NatGatewayResponse
 from app.schemas.common import MessageResponse
 from app.schemas.ldap import (
     LdapSettingsUpdate,
     LdapSettingsResponse,
     LdapTestRequest,
     LdapTestResponse,
+    LdapSyncResponse,
 )
 
 router = APIRouter()
@@ -300,3 +303,120 @@ async def test_ldap_settings(
     }
     ok, error = await LdapService(db).test_connection(conf)
     return LdapTestResponse(success=ok, message=error)
+
+
+@router.post("/ldap-settings/sync-group", response_model=LdapSyncResponse)
+async def sync_ldap_group(
+    delete_mode: str = "deactivate",
+    dry_run: bool = False,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mirror the AD group's members into local shadow users (admin-only).
+
+    Query params:
+      - delete_mode: how to treat AD users no longer in the group —
+        "deactivate" (default, reversible) | "delete" (hard) | "keep".
+      - dry_run: when true, computes counts without changing anything (preview).
+    """
+    from app.services.ldap_service import LdapService
+
+    if delete_mode not in ("deactivate", "delete", "keep"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="delete_mode must be one of: deactivate, delete, keep",
+        )
+    result = await LdapService(db).sync_group(delete_mode=delete_mode, dry_run=dry_run)
+    return LdapSyncResponse(**result)
+
+
+# ==================== NAT Gateway (host-as-NAT) ====================
+
+def _nat_gateway_to_response(cfg, applied=None, agent_message=None) -> NatGatewayResponse:
+    """Serialize NAT gateway settings; seed from env when no row exists yet."""
+    from app.core.config import settings
+
+    if cfg is None:
+        return NatGatewayResponse(
+            enabled=bool(settings.NAT_GATEWAY_NETWORK),
+            network=settings.NAT_GATEWAY_NETWORK or None,
+            public_interface=settings.PUBLIC_INTERFACE or None,
+            exclude_networks=getattr(settings, "NAT_GATEWAY_EXCLUDE", "") or None,
+            applied=applied,
+            agent_message=agent_message,
+        )
+    return NatGatewayResponse(
+        enabled=cfg.enabled,
+        network=cfg.network,
+        public_interface=cfg.public_interface,
+        exclude_networks=cfg.exclude_networks,
+        applied=applied,
+        agent_message=agent_message,
+    )
+
+
+@router.get("/nat-gateway", response_model=NatGatewayResponse)
+async def get_nat_gateway(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the host-as-NAT-gateway config (DB row, or env defaults if unset)."""
+    from sqlalchemy import select
+
+    cfg = (await db.execute(select(NatGatewaySettings).limit(1))).scalar_one_or_none()
+    return _nat_gateway_to_response(cfg)
+
+
+@router.put("/nat-gateway", response_model=NatGatewayResponse)
+async def update_nat_gateway(
+    data: NatGatewayUpdate,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save the NAT gateway config and ask the agent to (re)apply it (admin-only)."""
+    import ipaddress
+    from sqlalchemy import select
+    from app.api.v1.routes.firewall import apply_gateway_via_agent
+
+    if data.enabled and not (data.network or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="network is required when the gateway is enabled",
+        )
+    if data.network:
+        try:
+            ipaddress.ip_network(data.network.strip(), strict=False)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid network CIDR: {data.network}",
+            )
+    for cidr in (data.exclude_networks or "").split(","):
+        cidr = cidr.strip()
+        if not cidr:
+            continue
+        try:
+            ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid exclude CIDR: {cidr}",
+            )
+
+    cfg = (await db.execute(select(NatGatewaySettings).limit(1))).scalar_one_or_none()
+    if cfg is None:
+        cfg = NatGatewaySettings()
+        db.add(cfg)
+    cfg.enabled = data.enabled
+    cfg.network = (data.network or "").strip() or None
+    cfg.public_interface = (data.public_interface or "").strip() or None
+    cfg.exclude_networks = (data.exclude_networks or "").strip() or None
+    await db.commit()
+    await db.refresh(cfg)
+
+    agent = await apply_gateway_via_agent()
+    return _nat_gateway_to_response(
+        cfg,
+        applied=bool(agent.get("success")),
+        agent_message=agent.get("error"),
+    )

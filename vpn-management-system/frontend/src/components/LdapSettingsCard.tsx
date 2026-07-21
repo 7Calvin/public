@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { adminApi, type LdapSettings } from '@/api/client'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { adminApi, type LdapSettings, type LdapSyncResult } from '@/api/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { Network, Save, PlugZap, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react'
+import { Network, Save, PlugZap, Eye, EyeOff, CheckCircle2, XCircle, Users, RefreshCw } from 'lucide-react'
 
 interface FormState {
   enabled: boolean
@@ -123,6 +123,44 @@ export default function LdapSettingsCard() {
       })
     },
   })
+
+  const queryClient = useQueryClient()
+  const [deleteMode, setDeleteMode] = useState<'deactivate' | 'delete' | 'keep'>('deactivate')
+  const [syncPreview, setSyncPreview] = useState<LdapSyncResult | null>(null)
+  const [syncResult, setSyncResult] = useState<LdapSyncResult | null>(null)
+
+  const previewMutation = useMutation({
+    mutationFn: (mode: string) => adminApi.syncLdapGroup({ delete_mode: mode, dry_run: true }),
+    onSuccess: (res) => { setSyncResult(null); setSyncPreview(res.data) },
+    onError: (error: any) => {
+      setSyncPreview(null)
+      toast({
+        variant: 'destructive',
+        title: 'Falha ao pré-visualizar',
+        description: error?.response?.data?.detail || error?.response?.data?.message,
+      })
+    },
+  })
+
+  const syncMutation = useMutation({
+    mutationFn: (mode: string) => adminApi.syncLdapGroup({ delete_mode: mode, dry_run: false }),
+    onSuccess: (res) => {
+      setSyncPreview(null)
+      setSyncResult(res.data)
+      toast({ title: 'Sincronização concluída', description: res.data.message || undefined })
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Falha ao sincronizar',
+        description: error?.response?.data?.detail || error?.response?.data?.message,
+      })
+    },
+  })
+
+  const modeLabel = (n: number) =>
+    deleteMode === 'delete' ? `${n} remover` : deleteMode === 'keep' ? `${n} manter` : `${n} desativar`
 
   return (
     <Card>
@@ -298,6 +336,75 @@ export default function LdapSettingsCard() {
             Só usuários deste grupo conectam. Grupos aninhados (grupo dentro de grupo) são
             resolvidos automaticamente.
           </p>
+        </div>
+
+        {/* Group user sync */}
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <p className="font-medium">Sincronizar usuários do grupo</p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Importa como usuários locais todos os membros do grupo da VPN no AD, sem esperar
+            o primeiro login. Contas que saíram do grupo seguem a ação escolhida abaixo.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="ldap-sync-mode">Quem saiu do grupo</Label>
+              <select
+                id="ldap-sync-mode"
+                value={deleteMode}
+                onChange={(e) => {
+                  const v = e.target.value as 'deactivate' | 'delete' | 'keep'
+                  setDeleteMode(v)
+                  if (syncPreview) previewMutation.mutate(v)
+                }}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="deactivate">Desativar (reversível)</option>
+                <option value="delete">Excluir (apaga)</option>
+                <option value="keep">Manter na lista</option>
+              </select>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => previewMutation.mutate(deleteMode)}
+              disabled={previewMutation.isPending || !form.required_group_dn || !form.enabled}
+            >
+              <Users className="mr-2 h-4 w-4" />
+              {previewMutation.isPending ? 'Analisando...' : 'Sincronizar grupo'}
+            </Button>
+          </div>
+
+          {syncPreview && (
+            <div className="space-y-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+              <p className="font-medium">Prévia — {syncPreview.total_in_group} no grupo</p>
+              <p className="text-muted-foreground">
+                +{syncPreview.added} adicionar · {modeLabel(syncPreview.removed)} · {syncPreview.reactivated} reativar · {syncPreview.skipped} preservar
+              </p>
+              {deleteMode === 'delete' && syncPreview.removed > 0 && (
+                <p className="text-destructive">
+                  Atenção: {syncPreview.removed} usuário(s) serão APAGADOS permanentemente (perfil e histórico).
+                </p>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setSyncPreview(null)}>
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={() => syncMutation.mutate(deleteMode)} disabled={syncMutation.isPending}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+                  {syncMutation.isPending ? 'Sincronizando...' : 'Confirmar'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {syncResult && (
+            <div className="flex items-start gap-2 rounded-md border border-success/40 bg-success/10 p-3 text-sm text-success">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{syncResult.message}</span>
+            </div>
+          )}
         </div>
 
         {/* Test result */}
