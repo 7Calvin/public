@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
 import { TIMEZONES, getTimezone, setTimezone } from '@/lib/tz'
-import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save, ScrollText, Clock, Network } from 'lucide-react'
+import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save, ScrollText, Clock, Network, AlertTriangle } from 'lucide-react'
 import SystemUpdateCard from '@/components/SystemUpdateCard'
 import LdapSettingsCard from '@/components/LdapSettingsCard'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -90,6 +90,26 @@ export default function SettingsPage() {
       toast({
         variant: 'destructive',
         title: 'Failed to regenerate certificate',
+        description: error?.response?.data?.detail || error?.response?.data?.message,
+      })
+    },
+  })
+
+  const [armReissue, setArmReissue] = useState(false)
+  const reissueCertMutation = useMutation({
+    mutationFn: (domain: string) => proxyApi.reissueCertificate(domain),
+    onSuccess: (res: any) => {
+      toast({
+        title: res?.data?.message || 'Reemitindo certificado',
+        description: 'O proxy está reiniciando — aguarde ~1 min e recarregue a página.',
+      })
+      setArmReissue(false)
+      setTimeout(() => refetchCert(), 45000)
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Falha ao forçar reemissão',
         description: error?.response?.data?.detail || error?.response?.data?.message,
       })
     },
@@ -561,7 +581,7 @@ export default function SettingsPage() {
                 <Input
                   value={editDomain}
                   onChange={(e) => setEditDomain(e.target.value)}
-                  placeholder="vpn.calvin.local"
+                  placeholder="vpn.domain.local"
                   className="max-w-sm font-mono"
                 />
                 <Button
@@ -639,6 +659,33 @@ export default function SettingsPage() {
                       <RefreshCw className="h-4 w-4 mr-1" />
                       {renewCertMutation.isPending ? 'Regenerating...' : 'Regenerate cert'}
                     </Button>
+                  )}
+                  {mgmtDomain.domain && !armReissue && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setArmReissue(true)}
+                      title="Reinicia o proxy para reemitir o certificado — interrompe HTTPS por ~30s"
+                    >
+                      <AlertTriangle className="h-4 w-4 mr-1" />
+                      Forçar reemissão
+                    </Button>
+                  )}
+                  {armReissue && (
+                    <>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => reissueCertMutation.mutate(mgmtDomain.domain)}
+                        disabled={reissueCertMutation.isPending}
+                      >
+                        {reissueCertMutation.isPending ? 'Reiniciando…' : 'Confirmar — reinicia o proxy (~30s)'}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setArmReissue(false)}>
+                        Cancelar
+                      </Button>
+                    </>
                   )}
                   <Button variant="ghost" size="sm" onClick={() => { refetchMgmtDomain(); refetchCert() }}>
                     <RefreshCw className="h-4 w-4" />

@@ -36,7 +36,9 @@ _RULES = [
     ("POST", rf"^{_P}/ipsec/connections/?$", "ipsec", "Conexão IPsec criada"),
     ("PUT", rf"^{_P}/ipsec/connections/[^/]+/?$", "ipsec", "Conexão IPsec alterada"),
     ("DELETE", rf"^{_P}/ipsec/connections/[^/]+/?$", "ipsec", "Conexão IPsec removida"),
-    ("POST", rf"^{_P}/ipsec/connections/[^/]+/(start|restart|stop)/?$", "ipsec", "Ação em túnel IPsec"),
+    ("POST", rf"^{_P}/ipsec/connections/[^/]+/start/?$", "ipsec", "Túnel IPsec iniciado"),
+    ("POST", rf"^{_P}/ipsec/connections/[^/]+/restart/?$", "ipsec", "Túnel IPsec reiniciado"),
+    ("POST", rf"^{_P}/ipsec/connections/[^/]+/stop/?$", "ipsec", "Túnel IPsec parado"),
     ("POST", rf"^{_P}/ipsec/restart/?$", "ipsec", "StrongSwan reiniciado"),
     ("POST", rf"^{_P}/proxy/routes/?$", "config", "Rota de proxy criada"),
     ("PUT", rf"^{_P}/proxy/routes/[^/]+/?$", "config", "Rota de proxy alterada"),
@@ -53,6 +55,9 @@ _RULES = [
     ("POST", rf"^{_P}/auth/mfa/verify/?$", "auth", "MFA ativado"),
     ("POST", rf"^{_P}/auth/mfa/disable/?$", "auth", "MFA desativado"),
     ("POST", rf"^{_P}/system/update/?$", "system", "Atualização iniciada"),
+    ("PUT", rf"^{_P}/admin/ldap-settings/?$", "config", "Configuração do AD (LDAP) alterada"),
+    ("POST", rf"^{_P}/admin/ldap-settings/sync-group/?$", "users", "Grupo do AD sincronizado"),
+    ("PUT", rf"^{_P}/admin/nat-gateway/?$", "config", "NAT Gateway alterado"),
 ]
 _COMPILED = [(m, re.compile(rx), rt, lbl) for (m, rx, rt, lbl) in _RULES]
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")

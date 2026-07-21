@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { firewallApi } from '@/api/client'
+import { adminApi, firewallApi } from '@/api/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,9 +9,8 @@ import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { formatDateTime } from '@/lib/tz'
-import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server, Pencil, RefreshCw } from 'lucide-react'
+import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server, Pencil, RefreshCw, Globe, Check, X } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
-import NatGatewayFirewallCard from '@/components/NatGatewayFirewallCard'
 import type { FirewallRule } from '@/types'
 
 interface QuickRuleStatus {
@@ -180,6 +179,73 @@ export default function FirewallPage() {
   }
 
   const [confirmReapply, setConfirmReapply] = useState(false)
+  // NAT Gateway (host-as-NAT) — rendered as a row inside Regras Rápidas
+  const { data: natGw, refetch: refetchNat } = useQuery({
+    queryKey: ['nat-gateway'],
+    queryFn: () => adminApi.getNatGateway().then((r) => r.data),
+  })
+  const natSaveMutation = useMutation({
+    mutationFn: (payload: { enabled: boolean; network: string }) =>
+      adminApi.updateNatGateway({
+        enabled: payload.enabled,
+        network: payload.network || null,
+        public_interface: null,
+        exclude_networks: null,
+      }),
+    onSuccess: (res: any) => {
+      toast({
+        title: 'NAT Gateway atualizado',
+        description: res?.data?.applied === false ? 'Salvo, mas o agente não aplicou.' : 'Regras aplicadas.',
+      })
+      refetchNat()
+    },
+    onError: (error: any) =>
+      toast({ variant: 'destructive', title: 'Falha no NAT Gateway', description: error?.response?.data?.detail || error?.response?.data?.message }),
+  })
+
+  // Shared "gray value + pencil → inline edit/save" for the rule rows.
+  const [editingField, setEditingField] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const startEdit = (field: string, current: string) => { setEditingField(field); setEditValue(current) }
+  const renderEditable = (
+    field: string, value: string, placeholder: string,
+    onSave: (v: string) => void, pending: boolean,
+  ) => {
+    if (editingField === field) {
+      return (
+        <div className="flex items-center gap-1">
+          <Input
+            autoFocus
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); onSave(editValue); setEditingField(null) }
+              else if (e.key === 'Escape') setEditingField(null)
+            }}
+            placeholder={placeholder}
+            className="h-8 w-48 font-mono text-xs"
+          />
+          <Button variant="ghost" size="sm" className="h-7 px-2" disabled={pending}
+            onClick={() => { onSave(editValue); setEditingField(null) }}>
+            <Check className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditingField(null)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )
+    }
+    return (
+      <button
+        onClick={() => startEdit(field, value)}
+        className="group flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <span className="font-mono truncate max-w-[180px]">{value || '—'}</span>
+        <Pencil className="h-3.5 w-3.5 opacity-50 group-hover:opacity-100" />
+      </button>
+    )
+  }
+
   const reapplyMutation = useMutation({
     mutationFn: () => firewallApi.apply(),
     onSuccess: () => {
@@ -523,150 +589,109 @@ export default function FirewallPage() {
         }
       />
 
-      {/* Status */}
+      {/* Status strip */}
       {status && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Status do Firewall
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Motor</p>
-                <p className="font-medium">{status.engine || 'nftables'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Status</p>
-                <p className={status.is_active ? 'text-success' : 'text-destructive'}>
-                  {status.is_active ? 'Ativo' : 'Inativo'}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Regras Ativas</p>
-                <p>{status.active_rules || 0}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Última Aplicação</p>
-                <p className="text-muted-foreground">
-                  {status.last_applied ? formatDateTime(status.last_applied) : 'Nunca'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-card px-4 py-2.5 text-sm">
+          <span className="flex items-center gap-2 font-medium">
+            <Shield className={`h-4 w-4 ${status.is_active ? 'text-success' : 'text-destructive'}`} />
+            Firewall {status.is_active ? 'ativo' : 'inativo'}
+          </span>
+          <span className="hidden h-4 w-px bg-border sm:block" aria-hidden />
+          <span className="text-muted-foreground">
+            Motor <span className="text-foreground">{status.engine || 'nftables'}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Regras <span className="text-foreground">{status.active_rules || 0}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Última aplicação{' '}
+            <span className="text-foreground">
+              {status.last_applied ? formatDateTime(status.last_applied) : 'nunca'}
+            </span>
+          </span>
+        </div>
       )}
 
-      {/* Quick Rules */}
+      {/* Regras Rápidas + NAT Gateway — uma linha por regra */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5" />
+        <CardHeader className="p-4 pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Zap className="h-4 w-4" />
             Regras Rápidas
           </CardTitle>
-          <CardDescription>Ative regras comuns do firewall OpenVPN com um clique</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
+        <CardContent className="p-4 pt-0">
+          <div className="divide-y divide-border">
             {Object.entries(QUICK_RULE_CONFIG).map(([key, config]) => {
-              const ruleStatus = quickRules?.[key]
-              const isEnabled = ruleStatus?.exists || false
+              const isEnabled = quickRules?.[key]?.exists || false
               const Icon = config.icon
-
+              const editable = key === 'allow-internal-network'
               return (
-                <div
-                  key={key}
-                  className={`p-4 rounded-lg border transition-colors ${
-                    isEnabled ? 'bg-primary/10 border-primary' : 'bg-muted/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <Icon className={`h-5 w-5 flex-shrink-0 ${isEnabled ? config.color : 'text-muted-foreground'}`} />
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm">{config.label}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {config.subtitle}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() =>
-                        quickRuleToggleMutation.mutate({
-                          key,
-                          networks: key === 'allow-internal-network' ? parseNets(internalNets) : undefined,
-                        })
-                      }
-                      disabled={quickRuleToggleMutation.isPending}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 ml-3 items-center rounded-full transition-colors ${
-                        isEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          isEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
+                <div key={key} className="flex items-center gap-3 py-2.5">
+                  <Icon className={`h-4 w-4 shrink-0 ${isEnabled ? config.color : 'text-muted-foreground'}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{config.label}</p>
+                    <p className="text-xs text-muted-foreground truncate">{config.subtitle}</p>
                   </div>
-
-                  {key === 'allow-internal-network' && (
-                    <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
-                      <Label className="text-xs text-muted-foreground">
-                        Redes permitidas (CIDR, separadas por vírgula)
-                      </Label>
-                      <div className="flex gap-2">
-                        <Input
-                          value={internalNets}
-                          onChange={(e) => setInternalNets(e.target.value)}
-                          placeholder="10.10.22.0/24, 192.168.0.0/16"
-                          className="h-9 flex-1 font-mono text-xs"
-                        />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setNetworksMutation.mutate(parseNets(internalNets))}
-                          disabled={setNetworksMutation.isPending || parseNets(internalNets).length === 0}
-                        >
-                          Salvar
-                        </Button>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        Puxado das push routes por padrão. Edite para restringir a uma sub-rede específica — "Salvar" já aplica.
-                      </p>
-                    </div>
+                  {editable && renderEditable(
+                    'internal-nets', internalNets, '10.10.22.0/24, 192.168.0.0/16',
+                    (v) => { setInternalNets(v); setNetworksMutation.mutate(parseNets(v)) },
+                    setNetworksMutation.isPending,
                   )}
+                  <button
+                    onClick={() => quickRuleToggleMutation.mutate({ key, networks: editable ? parseNets(internalNets) : undefined })}
+                    disabled={quickRuleToggleMutation.isPending}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${isEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
                 </div>
               )
             })}
+
+            {/* NAT Gateway como linha */}
+            <div className="flex items-center gap-3 py-2.5">
+              <Globe className={`h-4 w-4 shrink-0 ${natGw?.enabled ? 'text-primary' : 'text-muted-foreground'}`} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">NAT Gateway (saída à internet)</p>
+                <p className="text-xs text-muted-foreground truncate">Masquerade da sub-rede · interface e exceções IPsec automáticas</p>
+              </div>
+              {renderEditable(
+                'nat-network', natGw?.network ?? '', '10.1.0.0/16',
+                (v) => natSaveMutation.mutate({ enabled: natGw?.enabled ?? false, network: v }),
+                natSaveMutation.isPending,
+              )}
+              <button
+                onClick={() => natSaveMutation.mutate({ enabled: !(natGw?.enabled ?? false), network: natGw?.network ?? '' })}
+                disabled={natSaveMutation.isPending || (!natGw?.enabled && !natGw?.network)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${natGw?.enabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${natGw?.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-4">
-            Nota: Clique em "Aplicar Regras" para ativar as alterações no firewall.
+          <p className="text-xs text-muted-foreground mt-3">
+            Nota: clique em "Reaplicar regras" no topo para ativar mudanças de firewall.
           </p>
         </CardContent>
       </Card>
 
-      {/* NAT Gateway (host-as-NAT masquerade) */}
-      <NatGatewayFirewallCard />
-
       {/* Port Forwarding (DNAT) */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between p-4 pb-3">
           <div>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Server className="h-4 w-4" />
               Encaminhamento de Portas (DNAT)
             </CardTitle>
-          <CardDescription>Encaminhe portas externas deste servidor para hosts internos na rede privada (DNAT via agente NAT)</CardDescription>
+            <CardDescription className="text-xs">Portas externas → hosts internos na rede privada (via agente NAT)</CardDescription>
           </div>
-          <Button onClick={() => setIsDNATModalOpen(true)}>
+          <Button size="sm" onClick={() => setIsDNATModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Adicionar Encaminhamento
+            Adicionar
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {isLoadingNAT ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -760,17 +785,17 @@ export default function FirewallPage() {
 
       {/* Rules */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between p-4 pb-3">
           <div>
-            <CardTitle>Regras do Firewall</CardTitle>
-            <CardDescription>{ruleList.length} regras aplicadas ao tráfego VPN - arraste as linhas para reordenar a prioridade</CardDescription>
+            <CardTitle className="text-base">Regras do Firewall</CardTitle>
+            <CardDescription className="text-xs">{ruleList.length} regras no tráfego VPN — arraste para reordenar a prioridade</CardDescription>
           </div>
-          <Button onClick={() => setIsAddModalOpen(true)}>
+          <Button size="sm" onClick={() => setIsAddModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Adicionar Regra
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {isLoading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />

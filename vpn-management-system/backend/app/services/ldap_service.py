@@ -360,7 +360,7 @@ class LdapService:
         timeout = conf.get("timeout") or 5
         domain = self._netbios(conf.get("bind_dn"), conf.get("ad_domain"), conf.get("search_base"))
         if not domain:
-            return False, "NetBIOS domain is required for NTLM (e.g. CALVIN)"
+            return False, "NetBIOS domain is required for NTLM (e.g. DOMAIN)"
         svc_domain, svc_user = self._split_bind(conf.get("bind_dn"), domain)
         client, err = await self._ntlm_client(
             conf["server"], conf.get("port") or 389, svc_domain, svc_user,

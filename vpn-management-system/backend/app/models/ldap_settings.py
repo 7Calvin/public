@@ -35,10 +35,10 @@ class LdapSettings(Base):
     # appliances like FortiGate authenticate. Kept configurable so directories
     # that still allow simple bind can use it.
     use_ntlm = Column(Boolean, default=True, nullable=False)
-    ad_domain = Column(String(100))       # NetBIOS domain for NTLM, e.g. CALVIN
+    ad_domain = Column(String(100))       # NetBIOS domain for NTLM, e.g. DOMAIN
 
     # Service account used to search the directory (bind then rebind as the user).
-    # For NTLM: sAMAccountName ("seven") or DOMAIN\user ("CALVIN\seven").
+    # For NTLM: sAMAccountName ("seven") or DOMAIN\user ("DOMAIN\seven").
     # For simple bind: full DN ("CN=svc-vpn,OU=Service,DC=empresa,DC=com").
     bind_dn = Column(String(500))
     bind_password = Column(Text)          # write-only via API, never returned

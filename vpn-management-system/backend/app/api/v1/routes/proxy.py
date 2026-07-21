@@ -324,6 +324,29 @@ async def renew_certificate(
     )
 
 
+@router.post("/certificates/{domain}/reissue", response_model=CertificateRenewResponse)
+async def reissue_certificate(
+    domain: str,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Force certificate re-issuance by restarting Traefik (admin only).
+
+    Use when the cert is served from Traefik's memory but is gone from acme.json, so
+    the normal renew has nothing to remove. Briefly interrupts all proxied HTTPS.
+    """
+    service = TraefikService(db)
+
+    success, message = await service.force_reissue_via_restart()
+
+    return CertificateRenewResponse(
+        success=success,
+        message=message,
+        domain=domain,
+    )
+
+
 @router.delete("/certificates/{domain}", response_model=MessageResponse)
 async def delete_certificate(
     domain: str,

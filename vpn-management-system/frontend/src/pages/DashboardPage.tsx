@@ -63,7 +63,7 @@ export default function DashboardPage() {
           }
         />
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="Sessões" value={stats?.active_connections ?? 0} sub={`${stats?.total_connections ?? 0} hoje`} icon={<Activity className="h-4 w-4" />} />
           <StatTile
             label="OpenVPN"
@@ -83,8 +83,8 @@ export default function DashboardPage() {
         </div>
 
         <Card>
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0">
-            <CardTitle className="flex items-center gap-2"><ArrowUpDown className="h-5 w-5 text-primary" /> Throughput</CardTitle>
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0 p-4 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><ArrowUpDown className="h-4 w-4 text-primary" /> Throughput</CardTitle>
             <div className="flex items-center gap-3">
               <div className="hidden items-center gap-4 text-xs text-muted-foreground sm:flex">
                 <span className="inline-flex items-center gap-1.5"><span className="h-1 w-4 rounded-full" style={{ background: 'hsl(188 84% 53%)' }} /> saída</span>
@@ -106,7 +106,7 @@ export default function DashboardPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 pt-0">
             <div className="grid gap-6 lg:grid-cols-2 lg:gap-0">
               <div className="lg:pr-6">
                 <div className="mb-2 flex items-center gap-2 border-b border-border/60 pb-2 text-sm font-medium text-foreground"><Shield className="h-4 w-4 text-primary" /> OpenVPN</div>
@@ -122,10 +122,10 @@ export default function DashboardPage() {
 
         {/* Serviços — saúde consolidada (compacto) */}
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base"><ServerIcon className="h-5 w-5 text-primary" /> Serviços</CardTitle>
+          <CardHeader className="p-4 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><ServerIcon className="h-4 w-4 text-primary" /> Serviços</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 pt-0">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <ServiceChip icon={Shield} name="OpenVPN" href="/vpn" state={online ? 'ok' : 'down'} statusText={online ? `Online · ${vpnStatus?.connected_clients ?? 0}` : 'Offline'} />
               <ServiceChip icon={Lock} name="IPsec" href="/ipsec" state={ipsecStatus?.strongswan_running ? 'ok' : 'down'} statusText={ipsecStatus?.strongswan_running ? `${ipsecStatus?.active_tunnels ?? 0}/${ipsecStatus?.total_connections ?? 0} túneis` : 'Parado'} />
@@ -139,8 +139,8 @@ export default function DashboardPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             {/* Servidor · Dados */}
             <Card>
-              <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle className="flex items-center gap-2"><ServerIcon className="h-5 w-5 text-primary" /> Servidor · Dados</CardTitle>
+              <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base"><ServerIcon className="h-4 w-4 text-primary" /> Servidor · Dados</CardTitle>
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
                     <span className="h-1.5 w-1.5 rounded-full bg-success eg-pulse" /> Online
@@ -148,7 +148,7 @@ export default function DashboardPage() {
                   {sysInfo.version && <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">v{sysInfo.version}</span>}
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4 pt-0">
                 <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
                   <Field label="Hostname" value={sysInfo.hostname || '—'} mono />
                   <Field label="Sistema" value={sysInfo.os || '—'} />
@@ -177,11 +177,11 @@ export default function DashboardPage() {
 
             {/* Servidor · Observabilidade */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5 text-primary" /> Servidor · Observabilidade</CardTitle>
-                <CardDescription>Uso de recursos em tempo real</CardDescription>
+              <CardHeader className="p-4 pb-3">
+                <CardTitle className="flex items-center gap-2 text-base"><Activity className="h-4 w-4 text-primary" /> Servidor · Observabilidade</CardTitle>
+                <CardDescription className="text-xs">Uso de recursos em tempo real</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 p-4 pt-0">
                 <Meter label="CPU" pct={sysInfo.cpu_pct} sub={`${sysInfo.cpu_cores ?? '?'} vCPU · load ${sysInfo.loadavg ?? '—'}`} />
                 <Meter label="Memória" pct={sysInfo.mem_pct} sub={sysInfo.mem_total_kb ? `${formatBytes((sysInfo.mem_used_kb || 0) * 1024)} / ${formatBytes(sysInfo.mem_total_kb * 1024)}` : undefined} />
                 <Meter label="Disco" pct={sysInfo.disk_pct} sub={sysInfo.disk_total_kb ? `${formatBytes((sysInfo.disk_used_kb || 0) * 1024)} / ${formatBytes(sysInfo.disk_total_kb * 1024)}` : undefined} />
@@ -199,10 +199,10 @@ export default function DashboardPage() {
       <PageHeader title="Minha VPN" subtitle="Status da sua conexão e perfil" />
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5 text-primary" /> Status da conexão</CardTitle>
+        <CardHeader className="p-4 pb-3">
+          <CardTitle className="flex items-center gap-2 text-base"><Activity className="h-4 w-4 text-primary" /> Status da conexão</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {myActiveConnection ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -224,11 +224,11 @@ export default function DashboardPage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Shield className="h-5 w-5 text-primary" /> Meu perfil VPN</CardTitle>
-          <CardDescription>Sua configuração de VPN</CardDescription>
+        <CardHeader className="p-4 pb-3">
+          <CardTitle className="flex items-center gap-2 text-base"><Shield className="h-4 w-4 text-primary" /> Meu perfil VPN</CardTitle>
+          <CardDescription className="text-xs">Sua configuração de VPN</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {myProfile ? (
             <div className="space-y-4">
               {(() => {
@@ -272,10 +272,10 @@ export default function DashboardPage() {
 
       {myStats && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><ArrowUpDown className="h-5 w-5 text-primary" /> Estatísticas de uso</CardTitle>
+          <CardHeader className="p-4 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><ArrowUpDown className="h-4 w-4 text-primary" /> Estatísticas de uso</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-2 text-sm">
+          <CardContent className="grid gap-2 text-sm p-4 pt-0">
             <Row label="Total de sessões" value={myStats.total_connections || 0} />
             <Row label="Dados enviados" value={formatBytes(myStats.total_bytes_sent || 0)} />
             <Row label="Dados recebidos" value={formatBytes(myStats.total_bytes_received || 0)} />

@@ -230,11 +230,15 @@ class VPNService:
         if redirect_gateway:
             for dns in dns_servers:
                 lines.append(f"dhcp-option DNS {dns}")
-            if internal_dns and split_domains:
+            if internal_dns:
                 lines.append(f"dhcp-option DNS {internal_dns}")
+            if split_domains:
                 lines.append(f"dhcp-option DOMAIN {split_domains[0]}")
-                for d in split_domains:
-                    lines.append(f"dhcp-option DOMAIN-ROUTE {d}")
+                # DOMAIN-ROUTE (split NRPT) only when an internal DNS handles those
+                # domains; otherwise the domain is just a DNS search suffix.
+                if internal_dns:
+                    for d in split_domains:
+                        lines.append(f"dhcp-option DOMAIN-ROUTE {d}")
         else:
             if internal_dns:
                 lines.append(f"route {internal_dns} 255.255.255.255")
@@ -1036,11 +1040,15 @@ G4AZmjLbG+8UYeKnGr4kMzYrq4rFjLVlzA==
             if redirect_gateway:
                 for dns in dns_servers:
                     block.append(f'push "dhcp-option DNS {dns}"')
-                if internal_dns_server and split_dns_domains:
+                if internal_dns_server:
                     block.append(f'push "dhcp-option DNS {internal_dns_server}"')
+                if split_dns_domains:
                     block.append(f'push "dhcp-option DOMAIN {split_dns_domains[0]}"')
-                    for d in split_dns_domains:
-                        block.append(f'push "dhcp-option DOMAIN-ROUTE {d}"')
+                    # DOMAIN-ROUTE (split NRPT) only when an internal DNS handles
+                    # those domains; otherwise the domain is just a search suffix.
+                    if internal_dns_server:
+                        for d in split_dns_domains:
+                            block.append(f'push "dhcp-option DOMAIN-ROUTE {d}"')
             else:
                 # Split tunnel: never push public DNS.
                 if internal_dns_server:

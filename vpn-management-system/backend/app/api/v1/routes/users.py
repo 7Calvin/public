@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.db.session import get_db
-from app.models.user import User, UserType
+from app.models.user import User, UserType, AuthSource
 from app.services.user_service import UserService
 from app.dependencies.auth import get_current_active_user, require_admin
 from app.schemas.user import (
@@ -80,13 +80,15 @@ async def list_users(
     user_type: Optional[UserType] = None,
     is_active: Optional[bool] = None,
     search: Optional[str] = None,
+    auth_source: Optional[AuthSource] = None,
+    is_admin: Optional[bool] = None,
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """
     List all users (admin only).
 
-    Supports filtering by type, status, and search.
+    Supports filtering by type, auth source (ad/local), admin flag, status, and search.
     """
     user_service = UserService(db)
 
@@ -95,7 +97,9 @@ async def list_users(
         limit=per_page,
         user_type=user_type,
         is_active=is_active,
-        search=search
+        search=search,
+        auth_source=auth_source,
+        is_admin=is_admin,
     )
 
     return PaginatedResponse.create(

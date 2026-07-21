@@ -672,7 +672,7 @@ class TraefikService:
                     result["acme_email"] = account["Email"]
 
                 # Parse certificates
-                certs = resolver_data.get("Certificates", [])
+                certs = resolver_data.get("Certificates") or []
                 if not certs:
                     continue
 
@@ -746,7 +746,7 @@ class TraefikService:
                 for resolver_name, resolver_data in acme_data.items():
                     if not isinstance(resolver_data, dict):
                         continue
-                    certs = resolver_data.get("Certificates", [])
+                    certs = resolver_data.get("Certificates") or []
                     original_count = len(certs)
                     resolver_data["Certificates"] = [
                         c for c in certs
@@ -774,7 +774,15 @@ class TraefikService:
                 return False, str(e)
 
         if not found_acme and not found_manual:
-            return False, f"Certificate for '{domain}' not found"
+            # Nothing to remove in acme.json. Traefik clears "Certificates" to [] and
+            # only re-persists a cert near its renewal window, so a valid cert is often
+            # served from Traefik's in-memory store while acme.json is empty. Not an
+            # error — Traefik auto-renews it. Offer the explicit restart path instead.
+            return True, (
+                f"Nenhuma cópia de '{domain}' no acme.json para reemitir agora. "
+                "O certificado é gerenciado pelo Traefik e renovado automaticamente "
+                "antes de expirar. Use 'Forçar reemissão' se precisar reemitir já."
+            )
 
         logger.info(f"Removed certificate for {domain} (acme={found_acme}, manual={found_manual})")
 
@@ -800,6 +808,38 @@ class TraefikService:
             "Use the DNS challenge button to issue a new one."
         )
 
+    async def force_reissue_via_restart(self) -> Tuple[bool, str]:
+        """Force certificate re-issuance by restarting Traefik.
+
+        Traefik keeps a valid cert in memory even after it's gone from acme.json, so
+        removing it there doesn't always trigger a re-request. Restarting Traefik drops
+        the in-memory store; on boot it sees the router needs a cert (certresolver) and
+        requests a fresh one via ACME. The restart is scheduled ~1s in the future so this
+        HTTP response (which itself flows through Traefik) can flush first.
+        """
+        import asyncio
+
+        container = self.traefik_container
+
+        async def _restart():
+            try:
+                await asyncio.sleep(1)
+                proc = await asyncio.create_subprocess_exec(
+                    "docker", "restart", container,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await proc.wait()
+                logger.info("Traefik restarted to force certificate re-issuance")
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"Traefik restart for re-issuance failed: {e}")
+
+        asyncio.ensure_future(_restart())
+        return True, (
+            "Reiniciando o proxy para reemitir o certificado. A conexão pode piscar "
+            "por ~30s e o navegador pode exibir um aviso até o novo certificado chegar."
+        )
+
     async def delete_certificate(self, domain: str) -> Tuple[bool, str]:
         """
         Permanently delete a certificate from ACME storage and/or manual certs.
@@ -815,7 +855,7 @@ class TraefikService:
                 for resolver_name, resolver_data in acme_data.items():
                     if not isinstance(resolver_data, dict):
                         continue
-                    certs = resolver_data.get("Certificates", [])
+                    certs = resolver_data.get("Certificates") or []
                     original_count = len(certs)
                     resolver_data["Certificates"] = [
                         c for c in certs

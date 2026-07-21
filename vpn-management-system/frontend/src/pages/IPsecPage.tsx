@@ -478,85 +478,69 @@ export default function IPsecPage() {
       />
 
       {/* Status Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Network className="h-5 w-5" />
-              Status do StrongSwan
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsStatusModalOpen(true)}
-              >
-                <Terminal className="h-4 w-4 mr-1" />
-                Status
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={openAllLogs}
-              >
-                <FileText className="h-4 w-4 mr-1" />
-                Todos os Logs
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => syncStatusMutation.mutate()}
-                disabled={syncStatusMutation.isPending}
-              >
-                <RefreshCw className={`h-4 w-4 mr-1 ${syncStatusMutation.isPending ? 'animate-spin' : ''}`} />
-                Sincronizar
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => refetchStatus()}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-5">
-            <div>
-              <p className="text-sm text-muted-foreground">StrongSwan</p>
-              <p className={status?.strongswan_running ? 'text-success font-medium' : 'text-destructive'}>
-                {status?.strongswan_running ? 'Em execução' : 'Parado'}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Versão</p>
-              <p className="font-medium">{versionInfo?.version || 'Desconhecida'}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Total de Conexões</p>
-              <p className="font-medium">{status?.total_connections || 0}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Túneis Ativos</p>
-              <p className="font-medium text-success">{status?.active_tunnels || 0}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Configurados</p>
-              <p className="font-medium">{connections.length}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-card px-4 py-2.5 text-sm">
+        <span className="text-muted-foreground">
+          StrongSwan{' '}
+          <span className={status?.strongswan_running ? 'text-success font-medium' : 'text-destructive'}>
+            {status?.strongswan_running ? 'Em execução' : 'Parado'}
+          </span>
+        </span>
+        <span className="text-muted-foreground">
+          Versão <span className="text-foreground">{versionInfo?.version || 'Desconhecida'}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Total de Conexões <span className="text-foreground">{status?.total_connections || 0}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Túneis Ativos <span className="text-success">{status?.active_tunnels || 0}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Configurados <span className="text-foreground">{connections.length}</span>
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsStatusModalOpen(true)}
+          >
+            <Terminal className="h-4 w-4 mr-1" />
+            Status
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openAllLogs}
+          >
+            <FileText className="h-4 w-4 mr-1" />
+            Todos os Logs
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => syncStatusMutation.mutate()}
+            disabled={syncStatusMutation.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${syncStatusMutation.isPending ? 'animate-spin' : ''}`} />
+            Sincronizar
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => refetchStatus()}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
       {/* Connections Card */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5" />
+        <CardHeader className="p-4 pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Server className="h-4 w-4" />
             Conexões IPsec
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-xs">
             {connections.length} conex{connections.length !== 1 ? 'ões' : 'ão'} configurada{connections.length !== 1 ? 's' : ''}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {isLoading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />

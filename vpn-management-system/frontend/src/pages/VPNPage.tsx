@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
 import { formatBytes } from '@/lib/utils'
-import { Download, RefreshCw, Shield, ShieldOff, Server, Settings, Save, Plus, X, AlertTriangle, Pencil } from 'lucide-react'
+import { Download, RefreshCw, Shield, ShieldOff, Settings, Save, Plus, X, AlertTriangle, Pencil } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import type { VPNServerConfig } from '@/types'
 
@@ -205,14 +205,14 @@ export default function VPNPage() {
       {/* Quick Start - Download .ovpn for non-admin users */}
       {!user?.is_admin && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
+          <CardHeader className="p-4 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Shield className="h-4 w-4" />
               Connect to VPN
             </CardTitle>
-            <CardDescription>Download the VPN configuration file and connect using your credentials</CardDescription>
+            <CardDescription className="text-xs">Download the VPN configuration file and connect using your credentials</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 p-4 pt-0">
             <div className="bg-muted p-4 rounded-lg">
               <h4 className="font-medium mb-2">How to connect:</h4>
               <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
@@ -231,94 +231,64 @@ export default function VPNPage() {
 
       {/* Server Status (Admin) */}
       {user?.is_admin && serverStatus && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="h-5 w-5" />
-              VPN Server Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Status</p>
-                <p className={serverStatus.is_running ? 'text-success' : 'text-destructive'}>
-                  {serverStatus.is_running ? 'Running' : 'Stopped'}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Connected Clients</p>
-                <p>{serverStatus.connected_clients}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Traffic In</p>
-                <p>{formatBytes(serverStatus.total_bytes_in)}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Traffic Out</p>
-                <p>{formatBytes(serverStatus.total_bytes_out)}</p>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-4">
-              {!serverStatus.is_running ? (
-                <Button
-                  onClick={() => startServerMutation.mutate()}
-                  disabled={startServerMutation.isPending}
-                  className="flex-1"
-                >
-                  {startServerMutation.isPending ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Shield className="h-4 w-4 mr-2" />
-                  )}
-                  Start Server
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => stopServerMutation.mutate()}
-                  disabled={stopServerMutation.isPending}
-                  variant="destructive"
-                  className="flex-1"
-                >
-                  {stopServerMutation.isPending ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <ShieldOff className="h-4 w-4 mr-2" />
-                  )}
-                  Stop Server
-                </Button>
-              )}
-              <Button
-                onClick={() => restartServerMutation.mutate()}
-                disabled={restartServerMutation.isPending || !serverStatus.is_running}
-                variant="outline"
-                className="flex-1"
-              >
-                {restartServerMutation.isPending ? (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-border bg-card px-4 py-2 text-sm">
+          <span className="text-muted-foreground">
+            Status{' '}
+            <span className={serverStatus.is_running ? 'text-success' : 'text-destructive'}>
+              {serverStatus.is_running ? 'Running' : 'Stopped'}
+            </span>
+          </span>
+          <span className="text-muted-foreground">
+            Connected Clients <span className="text-foreground">{serverStatus.connected_clients}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Traffic In <span className="text-foreground">{formatBytes(serverStatus.total_bytes_in)}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Traffic Out <span className="text-foreground">{formatBytes(serverStatus.total_bytes_out)}</span>
+          </span>
+          <div className="ml-auto flex gap-2">
+            {!serverStatus.is_running ? (
+              <Button size="sm" onClick={() => startServerMutation.mutate()} disabled={startServerMutation.isPending}>
+                {startServerMutation.isPending ? (
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <Shield className="h-4 w-4 mr-2" />
                 )}
-                Restart Server
+                Start
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            ) : (
+              <Button size="sm" variant="destructive" onClick={() => stopServerMutation.mutate()} disabled={stopServerMutation.isPending}>
+                {stopServerMutation.isPending ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <ShieldOff className="h-4 w-4 mr-2" />
+                )}
+                Stop
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => restartServerMutation.mutate()} disabled={restartServerMutation.isPending || !serverStatus.is_running}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${restartServerMutation.isPending ? 'animate-spin' : ''}`} />
+              Restart
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Server Configuration (Admin) */}
       {user?.is_admin && (
         <Card>
-          <CardHeader>
+          <CardHeader className="p-4 pb-3">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Settings className="h-4 w-4" />
                   Server Configuration
                 </CardTitle>
-                <CardDescription>OpenVPN server settings (changes may require restart)</CardDescription>
+                <CardDescription className="text-xs">OpenVPN server settings (changes may require restart)</CardDescription>
               </div>
               <Button
+                size="sm"
                 onClick={() => downloadServerConfigMutation.mutate()}
                 disabled={downloadServerConfigMutation.isPending}
               >
@@ -327,7 +297,7 @@ export default function VPNPage() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 pt-0">
             {configLoading ? (
               <div className="flex justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -342,7 +312,7 @@ export default function VPNPage() {
                       id="server_host"
                       value={configForm.server_host || ''}
                       onChange={(e) => setConfigForm({ ...configForm, server_host: e.target.value })}
-                      placeholder="vpn.calvin.local"
+                      placeholder="vpn.domain.local"
                     />
                   </div>
                   <div className="space-y-2">
@@ -455,30 +425,15 @@ export default function VPNPage() {
                   </div>
                 </div>
 
-                {/* Split DNS (internal domain resolution through the tunnel) */}
+                {/* DNS search domain(s) pushed to clients */}
                 <div className="space-y-3 p-4 border border-border rounded-lg">
                   <div>
-                    <Label className="text-base font-medium">Split DNS (domínio interno)</Label>
+                    <Label className="text-base font-medium">Domínio de busca (DNS)</Label>
                     <p className="text-sm text-muted-foreground">
-                      Resolve apenas os domínios abaixo por um DNS interno através do túnel; o
-                      resto continua usando o DNS do cliente. Ideal para split-tunnel (Redirect
-                      Gateway desligado). Em split-tunnel, o DNS público NÃO é empurrado.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>DNS interno</Label>
-                    <Input
-                      placeholder="10.48.0.10"
-                      value={configForm.internal_dns_server ?? ''}
-                      onChange={(e) =>
-                        setConfigForm({ ...configForm, internal_dns_server: e.target.value })
-                      }
-                      className="max-w-xs"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      IP do servidor DNS que resolve o domínio (precisa ser alcançável pelo túnel,
-                      ex. dentro da rede NAT). Deixe vazio para desabilitar.
+                      Sufixo DNS empurrado aos clientes (ex.: <span className="font-mono">host</span>{' '}
+                      → <span className="font-mono">host.domain.local</span>). Coloque seus resolvers
+                      (ex.: o DNS do AD) em <strong>DNS Servers</strong> acima — o AD resolve os nomes
+                      internos e encaminha o resto.
                     </p>
                   </div>
 
@@ -503,7 +458,7 @@ export default function VPNPage() {
                     </div>
                     <div className="flex gap-2">
                       <Input
-                        placeholder="calvin.local"
+                        placeholder="domain.local"
                         value={newSplitDomain}
                         onChange={(e) => setNewSplitDomain(e.target.value)}
                         onKeyDown={(e) => {
