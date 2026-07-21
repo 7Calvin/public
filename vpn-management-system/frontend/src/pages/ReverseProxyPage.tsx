@@ -632,10 +632,10 @@ export default function ReverseProxyPage() {
 
       {/* Traefik Status Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="p-4 pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Globe className="h-4 w-4" />
               Traefik
             </CardTitle>
             <div className="flex items-center gap-2">
@@ -669,16 +669,16 @@ export default function ReverseProxyPage() {
 
       {/* Routes Table */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
+        <CardHeader className="p-4 pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Globe className="h-4 w-4" />
             Rotas de Proxy
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-xs">
             {routes.length} rota{routes.length !== 1 ? 's' : ''} configurada{routes.length !== 1 ? 's' : ''}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {isLoading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -784,17 +784,17 @@ export default function ReverseProxyPage() {
 
       {/* SSL Certificates Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="p-4 pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Lock className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Lock className="h-4 w-4" />
               Certificados SSL
             </CardTitle>
             <Button variant="ghost" size="sm" onClick={() => refetchCerts()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
-          <CardDescription>
+          <CardDescription className="text-xs">
             {certsData?.acme_email && (
               <span>Conta ACME: {certsData.acme_email} &middot; </span>
             )}
@@ -810,7 +810,7 @@ export default function ReverseProxyPage() {
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {!certsData || certsData.total === 0 ? (
             <div className="text-center py-6">
               <Lock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />

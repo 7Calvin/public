@@ -678,20 +678,20 @@ export default function FirewallPage() {
 
       {/* Port Forwarding (DNAT) */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between p-4 pb-3">
           <div>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Server className="h-4 w-4" />
               Encaminhamento de Portas (DNAT)
             </CardTitle>
-          <CardDescription>Encaminhe portas externas deste servidor para hosts internos na rede privada (DNAT via agente NAT)</CardDescription>
+            <CardDescription className="text-xs">Portas externas → hosts internos na rede privada (via agente NAT)</CardDescription>
           </div>
-          <Button onClick={() => setIsDNATModalOpen(true)}>
+          <Button size="sm" onClick={() => setIsDNATModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Adicionar Encaminhamento
+            Adicionar
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {isLoadingNAT ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -785,17 +785,17 @@ export default function FirewallPage() {
 
       {/* Rules */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between p-4 pb-3">
           <div>
-            <CardTitle>Regras do Firewall</CardTitle>
-            <CardDescription>{ruleList.length} regras aplicadas ao tráfego VPN - arraste as linhas para reordenar a prioridade</CardDescription>
+            <CardTitle className="text-base">Regras do Firewall</CardTitle>
+            <CardDescription className="text-xs">{ruleList.length} regras no tráfego VPN — arraste para reordenar a prioridade</CardDescription>
           </div>
-          <Button onClick={() => setIsAddModalOpen(true)}>
+          <Button size="sm" onClick={() => setIsAddModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Adicionar Regra
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {isLoading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />

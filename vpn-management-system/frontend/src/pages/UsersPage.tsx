@@ -247,13 +247,13 @@ export default function UsersPage() {
 
       {/* Users Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Todos os Usuários</CardTitle>
-          <CardDescription>
+        <CardHeader className="p-4 pb-3">
+          <CardTitle className="text-base">Todos os Usuários</CardTitle>
+          <CardDescription className="text-xs">
             {userList.length} usuários no total
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {isLoading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />

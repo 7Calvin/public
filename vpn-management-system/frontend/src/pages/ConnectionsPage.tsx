@@ -152,42 +152,42 @@ export default function ConnectionsPage() {
       {isAdmin && stats && (
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-2 p-4 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground text-base">
                 Conexões Ativas
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               <div className="text-2xl font-bold">{stats.active_connections}</div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-2 p-4 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground text-base">
                 Usuários Ativos
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               <div className="text-2xl font-bold">{stats.active_users}</div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-2 p-4 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground text-base">
                 Dados Enviados
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               <div className="text-2xl font-bold">{formatBytes(stats.total_bytes_sent)}</div>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="pb-2 p-4 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground text-base">
                 Dados Recebidos
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               <div className="text-2xl font-bold">{formatBytes(stats.total_bytes_received)}</div>
             </CardContent>
           </Card>
@@ -197,14 +197,14 @@ export default function ConnectionsPage() {
       {/* Active Connections (Admin) */}
       {isAdmin && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-success" />
+          <CardHeader className="p-4 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="h-4 w-4 text-success" />
               Conexões Ativas
             </CardTitle>
-            <CardDescription>{activeConnections.length} conexões ativas no momento</CardDescription>
+            <CardDescription className="text-xs">{activeConnections.length} conexões ativas no momento</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 pt-0">
             {activeError ? (
               <div className="text-center py-8">
                 <p className="text-destructive">Falha ao carregar conexões ativas</p>
@@ -273,11 +273,11 @@ export default function ConnectionsPage() {
 
       {/* Connection History */}
       <Card>
-        <CardHeader>
-          <CardTitle>Histórico de Conexões</CardTitle>
-          <CardDescription>Registros recentes de conexões VPN</CardDescription>
+        <CardHeader className="p-4 pb-3">
+          <CardTitle className="text-base">Histórico de Conexões</CardTitle>
+          <CardDescription className="text-xs">Registros recentes de conexões VPN</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0">
           {myLoading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
