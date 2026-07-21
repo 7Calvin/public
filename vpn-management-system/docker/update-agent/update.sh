@@ -270,6 +270,27 @@ ensure_swanctl_mode() {
 }
 ensure_swanctl_mode || echo "WARN: ensure_swanctl_mode non-zero — IPsec may need manual attention" >> "$LOG_FILE"
 
+# ==================== Repair the traefik update-agent bind-mount (reboot-safety) ====
+# Old installs (<=1.4.3) bind-mounted docker/traefik/dynamic/update-agent.yml into
+# traefik. update.sh --delete wiped the host file; on the next reboot Docker recreated
+# the path as a DIRECTORY -> traefik can't mount a dir where a file goes -> exit 127 ->
+# whole web down. The compose is NOT synced by updates, so fix it surgically here: drop
+# the fragile bind-mount (the traefik_dynamic named volume already carries the dynamic
+# config). Idempotent — a no-op once removed. Recreates traefik so a currently-crashed
+# one recovers and the change takes effect immediately.
+fix_traefik_bindmount() {
+    local cf="$COMPOSE_FILE"
+    if grep -q 'dynamic/update-agent.yml:/etc/traefik/dynamic/update-agent.yml' "$cf" 2>/dev/null; then
+        write_status 42 "running" "Repairing traefik bind-mount (reboot-safety)..."
+        cp "$cf" "${cf}.bak-bindmount-$(date -u +%Y%m%d%H%M%S)" 2>/dev/null || true
+        sed -i '\#dynamic/update-agent.yml:/etc/traefik/dynamic/update-agent.yml#d' "$cf"
+        rm -rf "${INSTALL_DIR}/docker/traefik/dynamic/update-agent.yml"
+        compose up -d traefik >> "$LOG_FILE" 2>&1 || true
+        echo "Removed fragile update-agent.yml bind-mount from compose (reboot-safe now)" >> "$LOG_FILE"
+    fi
+}
+fix_traefik_bindmount || true
+
 # ==================== Build BEFORE touching running containers ====================
 # If a build fails here, nothing has been stopped or recreated yet.
 write_status 45 "running" "Building images (this can take a few minutes)..."
