@@ -927,12 +927,10 @@ ${POSTGRES_SERVICE}
     labels:
       - "traefik.enable=true"
       - "traefik.http.services.backend.loadbalancer.server.port=8000"
-      # HTTPS router for domain (with Let's Encrypt cert)
-      - "traefik.http.routers.backend.rule=Host(\`\${DOMAIN}\`) && (PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`))"
-      - "traefik.http.routers.backend.entrypoints=websecure"
-      - "traefik.http.routers.backend.tls=true"
-      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.backend.priority=20"
+      # IP-agnostic routing: no domain / Let's Encrypt routers. The panel is reached
+      # by public IP (which can change between sessions), so we serve a self-signed
+      # cert on any host. ACME refuses certs for bare IPs anyway, and domain routers
+      # with an unset DOMAIN would never match. Only the IP fallback routers remain.
       # HTTPS fallback for IP access (self-signed cert)
       - "traefik.http.routers.backend-ip.rule=PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`)"
       - "traefik.http.routers.backend-ip.entrypoints=websecure"
@@ -942,11 +940,6 @@ ${POSTGRES_SERVICE}
       - "traefik.http.routers.backend-http.rule=PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`)"
       - "traefik.http.routers.backend-http.entrypoints=web"
       - "traefik.http.routers.backend-http.priority=10"
-      # HTTP router for domain (redirect to HTTPS)
-      - "traefik.http.routers.backend-http-domain.rule=Host(\`\${DOMAIN}\`) && (PathPrefix(\`/api\`) || PathPrefix(\`/docs\`) || PathPrefix(\`/openapi.json\`) || PathPrefix(\`/health\`))"
-      - "traefik.http.routers.backend-http-domain.entrypoints=web"
-      - "traefik.http.routers.backend-http-domain.middlewares=https-redirect@file"
-      - "traefik.http.routers.backend-http-domain.priority=20"
     volumes:
       - ${INSTALL_DIR}/data/openvpn:/etc/openvpn
       - ${INSTALL_DIR}/logs:/var/log/vpn-management
@@ -976,12 +969,7 @@ ${POSTGRES_SERVICE}
     labels:
       - "traefik.enable=true"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
-      # HTTPS router for domain (with Let's Encrypt cert)
-      - "traefik.http.routers.frontend.rule=Host(\`\${DOMAIN}\`) && PathPrefix(\`/\`)"
-      - "traefik.http.routers.frontend.entrypoints=websecure"
-      - "traefik.http.routers.frontend.tls=true"
-      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.frontend.priority=2"
+      # IP-agnostic routing: no domain / Let's Encrypt routers (see backend note above).
       # HTTPS fallback for IP access (self-signed cert)
       - "traefik.http.routers.frontend-ip.rule=PathPrefix(\`/\`)"
       - "traefik.http.routers.frontend-ip.entrypoints=websecure"
@@ -991,11 +979,6 @@ ${POSTGRES_SERVICE}
       - "traefik.http.routers.frontend-http.rule=PathPrefix(\`/\`)"
       - "traefik.http.routers.frontend-http.entrypoints=web"
       - "traefik.http.routers.frontend-http.priority=1"
-      # HTTP router for domain (redirect to HTTPS)
-      - "traefik.http.routers.frontend-http-domain.rule=Host(\`\${DOMAIN}\`) && PathPrefix(\`/\`)"
-      - "traefik.http.routers.frontend-http-domain.entrypoints=web"
-      - "traefik.http.routers.frontend-http-domain.middlewares=https-redirect@file"
-      - "traefik.http.routers.frontend-http-domain.priority=2"
     networks:
       - vpn-network
 
@@ -1028,7 +1011,11 @@ ${POSTGRES_SERVICE}
     volumes:
       - ${INSTALL_DIR}/docker/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ${INSTALL_DIR}/docker/traefik/dynamic/internal.yml:/etc/traefik/dynamic/internal.yml:ro
-      - ${INSTALL_DIR}/docker/traefik/dynamic/update-agent.yml:/etc/traefik/dynamic/update-agent.yml:ro
+      # update-agent.yml is NOT bind-mounted: a host bind-mount gets wiped by
+      # update.sh --delete, after which Docker recreates the path as a directory,
+      # causing a mount-type mismatch that crashes traefik (exit 127) and takes the
+      # whole web down. It is seeded into the traefik_dynamic named volume by
+      # start_services instead, which survives updates and reboots.
       - traefik_dynamic:/etc/traefik/dynamic
       - traefik_acme:/acme
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -1107,6 +1094,9 @@ create_traefik_config() {
     local ua_token="${UPDATE_AGENT_TOKEN}"
     [ -z "$ua_token" ] && [ -f /opt/vpn-management/update-agent.token ] && ua_token="$(cat /opt/vpn-management/update-agent.token)"
 
+    # Generated to a host staging path. It is no longer bind-mounted into traefik
+    # (see the traefik service in the compose file for why); start_services copies
+    # this file into the traefik_dynamic named volume once traefik is up.
     cat > "${INSTALL_DIR}/docker/traefik/dynamic/update-agent.yml" << EOF
 # Traefik Dynamic Configuration - Update Agent (auto-generated by install.sh)
 # Read-only status polling that survives backend/frontend restarts.
@@ -1194,6 +1184,20 @@ start_services() {
 
     log_info "Waiting for services to be healthy..."
     sleep 10
+
+    # Seed the update-agent route into the traefik_dynamic named volume. It is not
+    # bind-mounted (a host bind-mount is wiped by update.sh --delete and then breaks
+    # the traefik mount), so we copy it into the running container's volume here. The
+    # file survives updates/reboots because update.sh does not sync named volumes.
+    if [ -f "${INSTALL_DIR}/docker/traefik/dynamic/update-agent.yml" ]; then
+        log_info "Seeding update-agent route into traefik_dynamic volume..."
+        if docker cp "${INSTALL_DIR}/docker/traefik/dynamic/update-agent.yml" \
+            vpn-traefik:/etc/traefik/dynamic/update-agent.yml >/dev/null 2>&1; then
+            log_success "  Update-agent route seeded into the volume"
+        else
+            log_warn "  Could not seed update-agent route (is traefik running?)"
+        fi
+    fi
 
     # Check status
     docker compose ps
