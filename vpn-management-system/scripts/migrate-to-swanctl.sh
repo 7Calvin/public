@@ -19,7 +19,7 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/vpn-management}"
 REPO_DIR="${REPO_DIR:-${INSTALL_DIR}/repo}"
 GIT_REMOTE="${GIT_REMOTE:-https://github.com/7Calvin/public.git}"
 REPO_SUBDIR="vpn-management-system"
-TARGET="${TARGET:-v1.5.1}"
+TARGET="${TARGET:-v1.5.2}"
 
 log() { echo "[migrate-to-swanctl] $*"; }
 

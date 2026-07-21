@@ -193,6 +193,29 @@ async def startup_event():
 
     asyncio.create_task(_audit_retention_loop())
 
+    # On startup, (re)apply the IPsec config so the running strongSwan/swanctl daemon
+    # loads the connections from the DB. This makes tunnels come back on their own after
+    # a restart, update, reboot OR the legacy->swanctl migration (which otherwise leaves
+    # swanctl with no connections loaded until someone clicks Apply). Idempotent — a
+    # swanctl reload reconciles, so re-applying an unchanged config is a no-op.
+    async def _ipsec_apply_on_startup():
+        await asyncio.sleep(10)  # let the ipsec-agent / daemon settle first
+        try:
+            async with AsyncSessionLocal() as db:
+                from app.services.ipsec_service import IPsecService
+                svc = IPsecService(db)
+                conns, _ = await svc.list_connections(is_enabled=True)
+                if conns:
+                    ok, err = await svc.apply_config()
+                    if ok:
+                        logger.info(f"IPsec: applied {len(conns)} connection(s) on startup")
+                    else:
+                        logger.warning(f"IPsec startup apply failed: {err}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"IPsec startup apply error: {e}")
+
+    asyncio.create_task(_ipsec_apply_on_startup())
+
     # Background bandwidth sampler: snapshot server-wide OpenVPN byte counters
     # on an interval so the dashboard throughput chart has real time-series data.
     # A Postgres session-level advisory lock ensures exactly ONE process samples,
