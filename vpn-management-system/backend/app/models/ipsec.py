@@ -199,3 +199,95 @@ class IPsecConnection(Base):
             ]
             return '\n'.join(lines)
         return ""
+
+    # ==================== swanctl (vici) generation ====================
+    # The stack is migrating from the legacy stroke/ipsec.conf to swanctl. These
+    # produce the swanctl.conf `connections {}` / `secrets {}` entries. HA/failover
+    # (a second remote endpoint) plugs into `remote_addrs` below.
+
+    def _swanctl_version(self) -> str:
+        return "1" if self.ike_version == IKEVersion.IKEV1 else "2"
+
+    def _swanctl_start_action(self) -> str:
+        # auto=start -> initiate on load; auto=add -> install a trap (initiate on traffic)
+        return "start" if self.auto_start else "trap"
+
+    def _swanctl_dpd_action(self) -> str:
+        # legacy DPDAction -> swanctl child dpd_action ('hold' has no swanctl equivalent)
+        return {
+            "restart": "restart", "clear": "clear", "hold": "trap", "none": "none",
+        }.get(self.dpd_action.value, "restart")
+
+    def _remote_id(self) -> str:
+        # right_id is often left blank; strongSwan then keys off the peer IP.
+        return self.right_id or self.right_ip
+
+    def _remote_addrs(self) -> str:
+        """Comma-separated remote endpoints. A backup endpoint (HA/failover) is
+        appended here so swanctl tries both — native multi-homing failover."""
+        addrs = [self.right_ip]
+        backup = getattr(self, "right_ip_backup", None)
+        if backup and backup.strip() and backup.strip() != self.right_ip:
+            addrs.append(backup.strip())
+        return ", ".join(addrs)
+
+    def to_swanctl(self) -> str:
+        """Generate this connection's `<name> { ... }` entry for swanctl.conf's
+        `connections {}` block (the service wraps it)."""
+        left_subnets = [s.strip() for s in self.left_subnet.split(',') if s.strip()]
+        right_subnets = [s.strip() for s in self.right_subnet.split(',') if s.strip()]
+
+        if len(left_subnets) <= 1 and len(right_subnets) <= 1:
+            pairs = [(self.left_subnet.strip(), self.right_subnet.strip())]
+            child_names = [f"{self.name}-net"]
+        else:
+            pairs = [(l, r) for l in left_subnets for r in right_subnets]
+            child_names = [f"{self.name}-net-{i + 1}" for i in range(len(pairs))]
+
+        children = []
+        for cname, (lts, rts) in zip(child_names, pairs):
+            children.append("\n".join([
+                f"            {cname} {{",
+                f"                local_ts = {lts}",
+                f"                remote_ts = {rts}",
+                f"                esp_proposals = {self.esp_cipher}",
+                f"                rekey_time = {self.key_lifetime}",
+                f"                dpd_action = {self._swanctl_dpd_action()}",
+                f"                start_action = {self._swanctl_start_action()}",
+                f"            }}",
+            ]))
+
+        return "\n".join([
+            f"    {self.name} {{",
+            f"        version = {self._swanctl_version()}",
+            f"        local_addrs = {self.left_ip}",
+            f"        remote_addrs = {self._remote_addrs()}",
+            f"        proposals = {self.ike_cipher}",
+            f"        rekey_time = {self.ike_lifetime}",
+            f"        dpd_delay = 30s",
+            f"        local {{",
+            f"            auth = {self.auth_method}",
+            f"            id = {self.left_id}",
+            f"        }}",
+            f"        remote {{",
+            f"            auth = {self.auth_method}",
+            f"            id = {self._remote_id()}",
+            f"        }}",
+            f"        children {{",
+            "\n".join(children),
+            f"        }}",
+            f"    }}",
+        ])
+
+    def to_swanctl_secret(self) -> str:
+        """Generate this connection's `ike-<name> { ... }` entry for swanctl.conf's
+        `secrets {}` block."""
+        if self.auth_method == "psk" and self.psk:
+            return "\n".join([
+                f"    ike-{self.name} {{",
+                f"        id-1 = {self.left_id}",
+                f"        id-2 = {self._remote_id()}",
+                f'        secret = "{self.psk}"',
+                f"    }}",
+            ])
+        return ""

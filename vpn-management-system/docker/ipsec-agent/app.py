@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-IPsec Agent - Runs on host to execute StrongSwan commands
-Provides REST API for the backend to control IPsec tunnels
+IPsec Agent - runs on the HOST to drive strongSwan via **swanctl/vici**.
+
+Provides a small REST API the backend uses to control IPsec tunnels. Migrated
+from the legacy stroke/`ipsec` CLI to swanctl: config lives in
+/etc/swanctl/conf.d/, loaded with `swanctl --load-all`; status comes from
+`swanctl --list-sas`. Endpoint NAMES are kept stable so the backend mapping is
+unchanged; only the implementation underneath switched to swanctl.
 """
 import os
+import glob
 import subprocess
 import logging
 from flask import Flask, jsonify, request
@@ -12,276 +18,213 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Simple token auth
 AUTH_TOKEN = os.environ.get('IPSEC_AGENT_TOKEN', 'changeme-ipsec-token')
+SWANCTL_DIR = os.environ.get('SWANCTL_CONFD', '/etc/swanctl/conf.d')
+MANAGED_FILE = os.path.join(SWANCTL_DIR, 'edgegate.conf')
+STRONGSWAN_SERVICE = os.environ.get('STRONGSWAN_SERVICE', 'strongswan')
+
 
 def check_auth():
-    """Check authorization header"""
-    auth = request.headers.get('Authorization', '')
-    if auth != f'Bearer {AUTH_TOKEN}':
-        return False
-    return True
+    return request.headers.get('Authorization', '') == f'Bearer {AUTH_TOKEN}'
 
-def run_ipsec_command(args):
-    """Run ipsec command and return result"""
+
+def _strip_plugin_noise(text: str) -> str:
+    """swanctl's CLI prints 'plugin 'X' failed to load' lines to stderr for
+    optional plugins that aren't installed. They're cosmetic — drop them."""
+    if not text:
+        return text
+    return "\n".join(
+        l for l in text.splitlines()
+        if "failed to load" not in l or "plugin" not in l
+    ).strip()
+
+
+def run_swanctl(args):
+    """Run a swanctl command and return a normalized result dict."""
     try:
-        cmd = ['ipsec'] + args
-        logger.info(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
+        cmd = ['swanctl'] + args
+        logger.info("Running: %s", ' '.join(cmd))
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        stdout = r.stdout or ''
+        stderr = _strip_plugin_noise(r.stderr or '')
         return {
-            'success': result.returncode == 0,
-            'stdout': result.stdout,
-            'stderr': result.stderr,
-            'output': result.stdout + result.stderr,
-            'returncode': result.returncode
+            'success': r.returncode == 0,
+            'stdout': stdout,
+            'stderr': stderr,
+            'output': (stdout + ('\n' + stderr if stderr else '')).strip(),
+            'returncode': r.returncode,
         }
     except subprocess.TimeoutExpired:
         return {'success': False, 'output': 'Command timed out', 'returncode': -1}
     except FileNotFoundError:
-        return {'success': False, 'output': 'ipsec command not found', 'returncode': -1}
-    except Exception as e:
+        return {'success': False, 'output': 'swanctl command not found', 'returncode': -1}
+    except Exception as e:  # noqa: BLE001
         return {'success': False, 'output': str(e), 'returncode': -1}
+
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Health check endpoint"""
-    result = run_ipsec_command(['version'])
+    r = run_swanctl(['--stats'])
     return jsonify({
-        'status': 'healthy' if result['success'] else 'unhealthy',
-        'ipsec_installed': result['success'],
-        'version': result['stdout'].split('\n')[0] if result['success'] else None
+        'status': 'healthy' if r['success'] else 'unhealthy',
+        'ipsec_installed': r['success'],
+        'version': (r['stdout'].splitlines() or [None])[0] if r['success'] else None,
     })
+
 
 @app.route('/version', methods=['GET'])
 def version():
-    """Get StrongSwan version"""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    result = run_ipsec_command(['version'])
-    return jsonify(result)
+    r = run_swanctl(['--version'])
+    return jsonify(r)
+
 
 @app.route('/status', methods=['GET'])
 def status():
-    """Get IPsec status (ipsec statusall)"""
+    """Live SAs (swanctl --list-sas). Backend parses this text."""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    result = run_ipsec_command(['statusall'])
-    return jsonify(result)
+    return jsonify(run_swanctl(['--list-sas']))
+
 
 @app.route('/status/<connection_name>', methods=['GET'])
 def status_connection(connection_name):
-    """Get status of specific connection"""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    result = run_ipsec_command(['status', connection_name])
-    return jsonify(result)
+    return jsonify(run_swanctl(['--list-sas', '--ike', connection_name]))
+
 
 @app.route('/up/<connection_name>', methods=['POST'])
 def connection_up(connection_name):
-    """Start a connection (ipsec up)"""
+    """Initiate a connection (its IKE SA + configured children).
+
+    --timeout caps how long swanctl waits for establishment so an unreachable
+    peer can't block the worker (and cascade timeouts onto other requests)."""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    result = run_ipsec_command(['up', connection_name])
-    return jsonify(result)
+    return jsonify(run_swanctl(['--initiate', '--ike', connection_name, '--timeout', '8']))
+
 
 @app.route('/down/<connection_name>', methods=['POST'])
 def connection_down(connection_name):
-    """Stop a connection (ipsec down)"""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    result = run_ipsec_command(['down', connection_name])
-    return jsonify(result)
+    return jsonify(run_swanctl(['--terminate', '--ike', connection_name]))
+
 
 @app.route('/reload', methods=['POST'])
 def reload_config():
-    """Reload IPsec configuration.
-
-    'ipsec reload' rereads ipsec.conf but NOT ipsec.secrets, so a freshly
-    configured PSK would fail with "no shared key found" until a restart.
-    Run 'ipsec rereadsecrets' first so new/changed PSKs take effect on reload.
-    """
+    """Reconcile loaded config with /etc/swanctl (adds/updates AND unloads
+    removed connections/secrets)."""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    reread = run_ipsec_command(['rereadsecrets'])  # reload ipsec.secrets (PSKs)
-    result = run_ipsec_command(['reload'])          # reload ipsec.conf
-    result['rereadsecrets'] = reread
-    return jsonify(result)
+    return jsonify(run_swanctl(['--load-all', '--noprompt']))
+
 
 @app.route('/restart', methods=['POST'])
 def restart_ipsec():
-    """Restart StrongSwan"""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    result = run_ipsec_command(['restart'])
-    return jsonify(result)
+    try:
+        r = subprocess.run(['systemctl', 'restart', STRONGSWAN_SERVICE],
+                           capture_output=True, text=True, timeout=60)
+        return jsonify({'success': r.returncode == 0,
+                        'output': (r.stdout + r.stderr).strip(),
+                        'returncode': r.returncode})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'success': False, 'output': str(e), 'returncode': -1})
+
 
 @app.route('/config/write', methods=['POST'])
 def write_config():
-    """Write ipsec.conf and ipsec.secrets files"""
+    """Write the managed swanctl config. The backend regenerates the FULL config
+    for all connections, so we own conf.d: clear other *.conf, write edgegate.conf."""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
 
-    data = request.json
-    results = {}
+    data = request.json or {}
+    conf = data.get('swanctl_conf')
+    if conf is None:
+        return jsonify({'swanctl_conf': {'success': False, 'error': 'no swanctl_conf provided'}}), 400
 
-    # Write ipsec.conf
-    if 'ipsec_conf' in data:
-        try:
-            with open('/etc/ipsec.conf', 'w') as f:
-                f.write(data['ipsec_conf'])
-            results['ipsec_conf'] = {'success': True}
-            logger.info("Wrote /etc/ipsec.conf")
-        except Exception as e:
-            results['ipsec_conf'] = {'success': False, 'error': str(e)}
+    try:
+        os.makedirs(SWANCTL_DIR, exist_ok=True)
+        # We are the sole manager of conf.d — remove stale/hand-made files so
+        # `swanctl --load-all` doesn't load duplicate/leftover connections.
+        for f in glob.glob(os.path.join(SWANCTL_DIR, '*.conf')):
+            if os.path.abspath(f) != os.path.abspath(MANAGED_FILE):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+        with open(MANAGED_FILE, 'w') as fh:
+            fh.write(conf)
+        os.chmod(MANAGED_FILE, 0o600)
+        logger.info("Wrote %s", MANAGED_FILE)
+        return jsonify({'swanctl_conf': {'success': True}})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'swanctl_conf': {'success': False, 'error': str(e)}}), 500
 
-    # Write ipsec.secrets
-    if 'ipsec_secrets' in data:
-        try:
-            with open('/etc/ipsec.secrets', 'w') as f:
-                f.write(data['ipsec_secrets'])
-            # Set proper permissions
-            os.chmod('/etc/ipsec.secrets', 0o600)
-            results['ipsec_secrets'] = {'success': True}
-            logger.info("Wrote /etc/ipsec.secrets")
-        except Exception as e:
-            results['ipsec_secrets'] = {'success': False, 'error': str(e)}
-
-    return jsonify(results)
 
 @app.route('/config/read', methods=['GET'])
 def read_config():
-    """Read current ipsec.conf and ipsec.secrets"""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-
     result = {}
-
     try:
-        with open('/etc/ipsec.conf', 'r') as f:
-            result['ipsec_conf'] = f.read()
-    except Exception as e:
-        result['ipsec_conf_error'] = str(e)
-
-    try:
-        with open('/etc/ipsec.secrets', 'r') as f:
-            result['ipsec_secrets'] = f.read()
-    except Exception as e:
-        result['ipsec_secrets_error'] = str(e)
-
+        with open(MANAGED_FILE) as fh:
+            result['swanctl_conf'] = fh.read()
+    except Exception as e:  # noqa: BLE001
+        result['swanctl_conf_error'] = str(e)
     return jsonify(result)
 
 
 @app.route('/statusall', methods=['GET'])
 def statusall():
-    """Get detailed IPsec status (ipsec statusall) - raw output"""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
-    result = run_ipsec_command(['statusall'])
-    return jsonify(result)
+    return jsonify(run_swanctl(['--list-sas']))
 
 
 @app.route('/logs', methods=['GET'])
 def get_logs():
-    """Get recent IPsec/StrongSwan logs from journalctl (charon + strongswan-starter)"""
+    """Recent charon logs from the strongswan (swanctl) systemd unit."""
     if not check_auth():
         return jsonify({'error': 'Unauthorized'}), 401
 
     lines = request.args.get('lines', '100')
     connection = request.args.get('connection', None)
-
     try:
         max_lines = int(lines)
-
-        journal_cmd = [
-            'journalctl',
-            '-t', 'charon',
-            '-t', 'ipsec',
-            '-t', 'ipsec_starter',
-            '--no-pager',
-            '-n', str(max_lines * 3 if connection else max_lines),
-        ]
-
-        result = subprocess.run(
-            journal_cmd,
-            capture_output=True,
-            text=True,
-            timeout=30
+        r = subprocess.run(
+            ['journalctl', '-u', STRONGSWAN_SERVICE, '--no-pager',
+             '-n', str(max_lines * 3 if connection else max_lines)],
+            capture_output=True, text=True, timeout=30,
         )
-
-        if result.returncode == 0 and result.stdout.strip():
-            log_lines = result.stdout.strip().split('\n')
-
+        if r.returncode == 0 and r.stdout.strip():
+            log_lines = r.stdout.strip().split('\n')
             if connection:
-                conn_lower = connection.lower()
-                filtered = [
-                    line for line in log_lines
-                    if conn_lower in line.lower()
-                    or 'error' in line.lower()
-                    or 'failed' in line.lower()
-                ]
-                log_output = '\n'.join(filtered[-max_lines:])
+                cl = connection.lower()
+                log_lines = [l for l in log_lines
+                             if cl in l.lower() or 'error' in l.lower() or 'failed' in l.lower()]
                 source = f'journalctl (filtered: {connection})'
             else:
-                log_output = '\n'.join(log_lines[-max_lines:])
                 source = 'journalctl'
-
-            if log_output.strip():
-                return jsonify({
-                    'success': True,
-                    'logs': log_output,
-                    'source': source,
-                    'connection': connection
-                })
-
-        # Fallback: try log files directly
-        log_paths = [
-            '/var/log/charon.log',
-            '/var/log/strongswan.log',
-            '/var/log/syslog'
-        ]
-
-        for log_path in log_paths:
-            try:
-                result = subprocess.run(
-                    ['tail', '-n', str(max_lines * 3 if connection else max_lines), log_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    log_lines = result.stdout.strip().split('\n')
-                    if connection:
-                        conn_lower = connection.lower()
-                        log_lines = [l for l in log_lines if conn_lower in l.lower()]
-                    log_output = '\n'.join(log_lines[-max_lines:])
-                    if log_output.strip():
-                        return jsonify({
-                            'success': True,
-                            'logs': log_output,
-                            'source': log_path,
-                            'connection': connection
-                        })
-            except Exception:
-                continue
-
-        return jsonify({
-            'success': True,
-            'logs': f'No logs found{" for connection " + connection if connection else ""}',
-            'source': None,
-            'connection': connection
-        })
-
+            out = '\n'.join(log_lines[-max_lines:])
+            if out.strip():
+                return jsonify({'success': True, 'logs': out, 'source': source,
+                                'connection': connection})
+        return jsonify({'success': True,
+                        'logs': f'No logs found{" for " + connection if connection else ""}',
+                        'source': None, 'connection': connection})
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'logs': 'Timeout reading logs', 'source': None})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return jsonify({'success': False, 'logs': str(e), 'source': None})
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('IPSEC_AGENT_PORT', 8101))
-    logger.info(f"Starting IPsec Agent on port {port}")
+    logger.info("Starting IPsec Agent (swanctl) on port %d", port)
     app.run(host='0.0.0.0', port=port)

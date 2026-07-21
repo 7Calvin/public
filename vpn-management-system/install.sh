@@ -362,31 +362,29 @@ install_dependencies() {
 install_strongswan() {
     log_info "Installing StrongSwan (IPsec)..."
 
-    if command -v ipsec &> /dev/null || command -v swanctl &> /dev/null; then
-        log_success "StrongSwan already installed"
-    else
-        apt-get install -y -qq strongswan strongswan-pki libcharon-extra-plugins || \
-            apt-get install -y -qq strongswan-swanctl strongswan-pki libcharon-extra-plugins || \
-            log_warn "Could not install StrongSwan packages (IPsec features may be unavailable)"
-    fi
+    # The stack runs strongSwan in **swanctl/vici** mode (not legacy stroke/ipsec.conf),
+    # so we install swanctl + charon-systemd. strongswan-pki/extra-plugins for ciphers.
+    apt-get install -y -qq strongswan-swanctl charon-systemd strongswan-pki libcharon-extra-plugins || \
+        apt-get install -y -qq strongswan strongswan-swanctl strongswan-pki libcharon-extra-plugins || \
+        log_warn "Could not install swanctl packages (IPsec features may be unavailable)"
 
-    # Enable StrongSwan service. The unit name varies across distro versions:
-    # legacy "strongswan-starter" (<=22.04) vs modern "strongswan" /
-    # "strongswan-swanctl" (24.04+). IPsec is optional, so never abort the
-    # install here (set -e) if no unit exists.
-    local ss_svc=""
-    for candidate in strongswan-starter strongswan strongswan-swanctl; do
-        if systemctl list-unit-files 2>/dev/null | grep -q "^${candidate}\.service"; then
-            ss_svc="$candidate"
-            break
+    # Use the swanctl daemon (strongswan.service) and MASK the legacy starter so it can
+    # never auto-start (the `ipsec` CLI would otherwise revive it and it fights swanctl
+    # for the vici socket). Kill any orphan legacy charon holding UDP 500/4500 first.
+    systemctl stop strongswan-starter 2>/dev/null || true
+    systemctl mask strongswan-starter 2>/dev/null || true
+    pkill -9 -f '/usr/lib/ipsec/' 2>/dev/null || true
+    if systemctl list-unit-files 2>/dev/null | grep -q "^strongswan\.service"; then
+        systemctl enable strongswan 2>/dev/null || true
+        systemctl restart strongswan 2>/dev/null || true
+        sleep 2
+        if [ -S /var/run/charon.vici ] && swanctl --stats >/dev/null 2>&1; then
+            log_success "StrongSwan running in swanctl/vici mode"
+        else
+            log_warn "strongswan.service started but vici not confirmed (IPsec optional)"
         fi
-    done
-    if [ -n "$ss_svc" ]; then
-        systemctl enable "$ss_svc" 2>/dev/null || true
-        systemctl start "$ss_svc" 2>/dev/null || true
-        log_success "StrongSwan service enabled: $ss_svc"
     else
-        log_warn "No StrongSwan systemd unit found; skipping (IPsec optional)"
+        log_warn "No strongswan.service unit found; skipping (IPsec optional)"
     fi
 
     # Create MSS clamping + UFW route leftupdown script
@@ -494,8 +492,8 @@ install_ipsec_agent() {
     cat > /etc/systemd/system/ipsec-agent.service << EOF
 [Unit]
 Description=IPsec Agent for VPN Management System
-After=network.target strongswan-starter.service
-Wants=strongswan-starter.service
+After=network.target strongswan.service
+Wants=strongswan.service
 
 [Service]
 Type=simple
