@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { Globe, ShieldCheck } from 'lucide-react'
+import { Globe } from 'lucide-react'
 
 export default function NatGatewayFirewallCard() {
   const { toast } = useToast()
@@ -23,8 +23,6 @@ export default function NatGatewayFirewallCard() {
     setEnabled(data.enabled)
     setNetwork(data.network ?? '')
   }, [data])
-
-  const autoExcludes = data?.auto_excludes ?? []
 
   const save = useMutation({
     mutationFn: (payload: { enabled: boolean; network: string }) =>
@@ -119,15 +117,6 @@ export default function NatGatewayFirewallCard() {
                 Salvar
               </Button>
             </div>
-
-            {autoExcludes.length > 0 && (
-              <div className="flex items-start gap-2 rounded-md bg-muted/60 p-2 text-[11px] text-muted-foreground">
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-                <span>
-                  Isento de NAT (IPsec): <span className="font-mono">{autoExcludes.join(', ')}</span>
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </CardContent>
