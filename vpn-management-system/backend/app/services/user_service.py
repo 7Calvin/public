@@ -9,7 +9,7 @@ from sqlalchemy import select, update, delete, func, or_
 from sqlalchemy.orm import selectinload
 import logging
 
-from app.models.user import User, UserType
+from app.models.user import User, UserType, AuthSource
 from app.core.security import hash_password, generate_api_key, hash_api_key
 from app.schemas.user import UserCreate, UserUpdate, ServiceAccountCreate
 
@@ -49,7 +49,9 @@ class UserService:
         limit: int = 20,
         user_type: Optional[UserType] = None,
         is_active: Optional[bool] = None,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        auth_source: Optional[AuthSource] = None,
+        is_admin: Optional[bool] = None,
     ) -> Tuple[List[User], int]:
         """
         List users with filtering and pagination.
@@ -62,6 +64,12 @@ class UserService:
         # Apply filters
         if user_type:
             query = query.where(User.user_type == user_type)
+
+        if auth_source:
+            query = query.where(User.auth_source == auth_source)
+
+        if is_admin is not None:
+            query = query.where(User.is_admin == is_admin)
 
         if is_active is not None:
             query = query.where(User.is_active == is_active)

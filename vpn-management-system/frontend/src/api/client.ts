@@ -99,7 +99,7 @@ export const authApi = {
 
 // Users API
 export const usersApi = {
-  list: (params?: { page?: number; page_size?: number; search?: string }) =>
+  list: (params?: { page?: number; per_page?: number; search?: string; auth_source?: 'ad' | 'local'; is_admin?: boolean }) =>
     api.get('/users', { params }),
 
   get: (id: string) => api.get(`/users/${id}`),

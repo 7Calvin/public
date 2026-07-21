@@ -231,68 +231,48 @@ export default function VPNPage() {
 
       {/* Server Status (Admin) */}
       {user?.is_admin && serverStatus && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-card px-4 py-2.5 text-sm">
-            <span className="text-muted-foreground">
-              Status{' '}
-              <span className={serverStatus.is_running ? 'text-success' : 'text-destructive'}>
-                {serverStatus.is_running ? 'Running' : 'Stopped'}
-              </span>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-border bg-card px-4 py-2 text-sm">
+          <span className="text-muted-foreground">
+            Status{' '}
+            <span className={serverStatus.is_running ? 'text-success' : 'text-destructive'}>
+              {serverStatus.is_running ? 'Running' : 'Stopped'}
             </span>
-            <span className="text-muted-foreground">
-              Connected Clients <span className="text-foreground">{serverStatus.connected_clients}</span>
-            </span>
-            <span className="text-muted-foreground">
-              Traffic In <span className="text-foreground">{formatBytes(serverStatus.total_bytes_in)}</span>
-            </span>
-            <span className="text-muted-foreground">
-              Traffic Out <span className="text-foreground">{formatBytes(serverStatus.total_bytes_out)}</span>
-            </span>
-          </div>
-          <div className="flex gap-2">
-              {!serverStatus.is_running ? (
-                <Button
-                  onClick={() => startServerMutation.mutate()}
-                  disabled={startServerMutation.isPending}
-                  className="flex-1"
-                >
-                  {startServerMutation.isPending ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Shield className="h-4 w-4 mr-2" />
-                  )}
-                  Start Server
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => stopServerMutation.mutate()}
-                  disabled={stopServerMutation.isPending}
-                  variant="destructive"
-                  className="flex-1"
-                >
-                  {stopServerMutation.isPending ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <ShieldOff className="h-4 w-4 mr-2" />
-                  )}
-                  Stop Server
-                </Button>
-              )}
-              <Button
-                onClick={() => restartServerMutation.mutate()}
-                disabled={restartServerMutation.isPending || !serverStatus.is_running}
-                variant="outline"
-                className="flex-1"
-              >
-                {restartServerMutation.isPending ? (
+          </span>
+          <span className="text-muted-foreground">
+            Connected Clients <span className="text-foreground">{serverStatus.connected_clients}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Traffic In <span className="text-foreground">{formatBytes(serverStatus.total_bytes_in)}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Traffic Out <span className="text-foreground">{formatBytes(serverStatus.total_bytes_out)}</span>
+          </span>
+          <div className="ml-auto flex gap-2">
+            {!serverStatus.is_running ? (
+              <Button size="sm" onClick={() => startServerMutation.mutate()} disabled={startServerMutation.isPending}>
+                {startServerMutation.isPending ? (
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <Shield className="h-4 w-4 mr-2" />
                 )}
-                Restart Server
+                Start
               </Button>
-            </div>
+            ) : (
+              <Button size="sm" variant="destructive" onClick={() => stopServerMutation.mutate()} disabled={stopServerMutation.isPending}>
+                {stopServerMutation.isPending ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <ShieldOff className="h-4 w-4 mr-2" />
+                )}
+                Stop
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => restartServerMutation.mutate()} disabled={restartServerMutation.isPending || !serverStatus.is_running}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${restartServerMutation.isPending ? 'animate-spin' : ''}`} />
+              Restart
+            </Button>
           </div>
+        </div>
       )}
 
       {/* Server Configuration (Admin) */}

@@ -17,6 +17,9 @@ export default function UsersPage() {
   const { toast } = useToast()
   const currentUser = useAuthStore((state) => state.user)
   const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'ad' | 'local' | 'admin'>('all')
+  const [perPage, setPerPage] = useState(20)
+  const [page, setPage] = useState(1)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [userType, setUserType] = useState<'human' | 'service'>('human')
@@ -40,8 +43,22 @@ export default function UsersPage() {
   const [apiKeyCopied, setApiKeyCopied] = useState(false)
 
   const { data: users, isLoading } = useQuery({
-    queryKey: ['users', search],
-    queryFn: () => usersApi.list({ search }).then((res) => res.data),
+    queryKey: ['users', search, typeFilter, page, perPage],
+    queryFn: () =>
+      usersApi
+        .list({
+          search: search || undefined,
+          page,
+          per_page: perPage,
+          ...(typeFilter === 'ad'
+            ? { auth_source: 'ad' as const }
+            : typeFilter === 'local'
+            ? { auth_source: 'local' as const }
+            : typeFilter === 'admin'
+            ? { is_admin: true }
+            : {}),
+        })
+        .then((res) => res.data),
   })
 
   const toggleUserMutation = useMutation({
@@ -217,7 +234,11 @@ export default function UsersPage() {
     createUserMutation.mutate()
   }
 
-  const userList = Array.isArray(users) ? users : users?.items || []
+  const userList = users?.items || []
+  const total = users?.total ?? userList.length
+  const totalPages = Math.max(1, Math.ceil(total / perPage))
+  const fromItem = total === 0 ? 0 : (page - 1) * perPage + 1
+  const toItem = Math.min(page * perPage, total)
 
   return (
     <div className="space-y-6">
@@ -232,17 +253,36 @@ export default function UsersPage() {
         }
       />
 
-      {/* Search */}
-      <div className="flex gap-4">
-        <div className="relative flex-1 max-w-sm">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar usuários..."
+            placeholder="Buscar por nome..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             className="pl-9"
           />
         </div>
+        <select
+          value={typeFilter}
+          onChange={(e) => { setTypeFilter(e.target.value as 'all' | 'ad' | 'local' | 'admin'); setPage(1) }}
+          className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="all">Todos os tipos</option>
+          <option value="ad">AD</option>
+          <option value="local">Local</option>
+          <option value="admin">Admin</option>
+        </select>
+        <select
+          value={perPage}
+          onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1) }}
+          className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value={10}>10 / página</option>
+          <option value={20}>20 / página</option>
+          <option value={50}>50 / página</option>
+        </select>
       </div>
 
       {/* Users Table */}
@@ -250,7 +290,7 @@ export default function UsersPage() {
         <CardHeader className="p-4 pb-3">
           <CardTitle className="text-base">Todos os Usuários</CardTitle>
           <CardDescription className="text-xs">
-            {userList.length} usuários no total
+            {total} usuário{total === 1 ? '' : 's'} no total
           </CardDescription>
         </CardHeader>
         <CardContent className="p-4 pt-0">
@@ -447,6 +487,20 @@ export default function UsersPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {total > perPage && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 text-sm text-muted-foreground">
+              <span>Mostrando {fromItem}–{toItem} de {total}</span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                  Anterior
+                </Button>
+                <span>Página {page} de {totalPages}</span>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                  Próxima
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
