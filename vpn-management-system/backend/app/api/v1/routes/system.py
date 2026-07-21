@@ -141,6 +141,16 @@ async def check_for_update(admin: User = Depends(require_admin)):
     return data
 
 
+@router.get("/update/versions")
+async def list_update_versions(admin: User = Depends(require_admin)):
+    """List available version tags so the admin can update to — or roll back to —
+    a specific version."""
+    ok, data = await update_service.list_versions()
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=data)
+    return data
+
+
 @router.post("/update")
 async def start_update(payload: UpdateRequest, admin: User = Depends(require_admin)):
     """Kick off a full-system update. Returns a job id immediately; poll the

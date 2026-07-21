@@ -164,6 +164,35 @@ def latest():
     })
 
 
+@app.route("/tags", methods=["GET"])
+def tags():
+    """List available version tags (newest first) so the UI can target a specific
+    version — including OLDER tags for a rollback. Also returns the installed
+    version so the UI can mark which tags are ahead (upgrade) vs behind (rollback)."""
+    if not check_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    # Lazily clone (no checkout) so this works before the first update, like /latest.
+    if not os.path.isdir(os.path.join(REPO_DIR, ".git")):
+        try:
+            r = subprocess.run(
+                ["git", "clone", "--no-checkout", GIT_REMOTE, REPO_DIR],
+                capture_output=True, text=True, timeout=300,
+            )
+            if r.returncode != 0:
+                return jsonify({"error": f"could not clone source repo: {r.stderr.strip()}",
+                                "tags": []}), 200
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"error": f"clone failed: {e}", "tags": []}), 200
+
+    code, _, err = _git("fetch", "--tags", "--prune", "origin")
+    if code != 0:
+        return jsonify({"error": f"git fetch failed: {err}", "tags": []}), 200
+
+    tag_list = [t for t in _git("tag", "-l", "v*", "--sort=-v:refname")[1].splitlines() if t.strip()]
+    return jsonify({"current": current_version(), "tags": tag_list})
+
+
 @app.route("/update", methods=["POST"])
 def update():
     if not check_auth():

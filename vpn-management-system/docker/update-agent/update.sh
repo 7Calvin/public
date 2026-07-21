@@ -121,6 +121,8 @@ fi
 
 cd "$REPO_DIR" || fail 8 "cannot enter repo dir"
 PREV_SHA="$(git rev-parse HEAD 2>/dev/null || echo '')"
+# Version currently installed (used to detect a rollback/downgrade below).
+INSTALLED_VERSION="$(cat "${INSTALL_DIR}/VERSION" 2>/dev/null | tr -d '[:space:]')"
 
 git fetch --tags --prune origin >> "$LOG_FILE" 2>&1 || fail 8 "git fetch failed"
 
@@ -133,6 +135,15 @@ if [ -z "$TARGET_REF" ]; then
     TARGET_REF="origin/${GIT_BRANCH}"
 fi
 UPDATE_REF="$TARGET_REF"
+
+# Only chase the branch tip when we are explicitly tracking the branch. For a tag
+# or a pinned commit — i.e. a rollback to an older version — a later
+# `git pull --ff-only` would fast-forward the old tag back up to the branch tip and
+# silently undo the rollback. So we pin (detached HEAD) unless the target IS the branch.
+TRACK_BRANCH=0
+case "$TARGET_REF" in
+    "origin/${GIT_BRANCH}"|"${GIT_BRANCH}") TRACK_BRANCH=1 ;;
+esac
 
 # ==================== Backup (DB + OpenVPN PKI + config) ====================
 if [ "$DO_BACKUP" = "1" ]; then
@@ -166,12 +177,24 @@ fi
 # ==================== Checkout target ====================
 write_status 20 "running" "Checking out ${UPDATE_REF}..."
 git checkout -f "$UPDATE_REF" >> "$LOG_FILE" 2>&1 || fail 20 "git checkout $UPDATE_REF failed"
-# If we tracked a branch, make sure we're at its tip.
-git pull --ff-only origin "$GIT_BRANCH" >> "$LOG_FILE" 2>&1 || true
+# Only fast-forward to the branch tip when tracking the branch — never for a tag or
+# commit pin, or a rollback to an older tag would be undone (see TRACK_BRANCH above).
+if [ "$TRACK_BRANCH" = "1" ]; then
+    git pull --ff-only origin "$GIT_BRANCH" >> "$LOG_FILE" 2>&1 || true
+fi
 NEW_SHA="$(git rev-parse HEAD)"
 
 SRC="${REPO_DIR}/${REPO_SUBDIR}"
 [ -d "$SRC" ] || fail 20 "source subdir $SRC not found in repo"
+
+# Detect a rollback: target VERSION older than the installed one (version-sorted).
+TARGET_VERSION="$(cat "${SRC}/VERSION" 2>/dev/null | tr -d '[:space:]')"
+IS_DOWNGRADE=0
+if [ -n "$INSTALLED_VERSION" ] && [ -n "$TARGET_VERSION" ] && [ "$INSTALLED_VERSION" != "$TARGET_VERSION" ]; then
+    lower="$(printf '%s\n%s\n' "$INSTALLED_VERSION" "$TARGET_VERSION" | sort -V | head -n1)"
+    [ "$lower" = "$TARGET_VERSION" ] && IS_DOWNGRADE=1
+fi
+[ "$IS_DOWNGRADE" = "1" ] && echo "Rollback detected: v${INSTALLED_VERSION} -> v${TARGET_VERSION}" >> "$LOG_FILE"
 
 # ==================== Sync application files ====================
 # NOTE: docker-compose.yml and config/.env are NOT synced here — structural
@@ -219,7 +242,14 @@ fi
 # is preserved; use the 'regenerate config' action to rebuild it explicitly.
 
 # ==================== Database migrations ====================
-if [ "$RUN_MIGRATIONS" = "1" ]; then
+if [ "$RUN_MIGRATIONS" = "1" ] && [ "$IS_DOWNGRADE" = "1" ]; then
+    # Rollback: the DB schema is newer than the target code. We do NOT auto-downgrade
+    # (that would drop columns/tables and lose data). Additive migrations are
+    # backward-compatible, so the older code runs fine against the newer schema. The
+    # pre-update dump is kept for a manual restore if a hard downgrade is ever needed.
+    write_status 78 "running" "Rollback — leaving DB schema as-is (forward-compatible); skipping migrations"
+    echo "Downgrade to v${TARGET_VERSION}: DB schema left untouched. Pre-update dump: ${bdir:-N/A}" >> "$LOG_FILE"
+elif [ "$RUN_MIGRATIONS" = "1" ]; then
     write_status 78 "running" "Running database migrations..."
     # Wait for backend container to be up enough to run alembic.
     for _ in $(seq 1 20); do
@@ -267,6 +297,35 @@ if [ "$healthy" != "1" ]; then
         fi
     fi
     fail 90 "Update failed and rollback did not restore health — check ${LOG_FILE} and backup ${bdir:-N/A}"
+fi
+
+# ==================== Refresh the host update-agent + this script ====================
+# The update-agent and this updater live OUTSIDE the compose lifecycle, in
+# ${INSTALL_DIR}/update-agent (a systemd service), so the file sync above does not
+# touch them. Now that the update is healthy, adopt any new agent/updater code and
+# restart the service so the change ships via a normal update (no install.sh re-run).
+# Use rename (mv), never cp-in-place, so THIS running script's open inode is left
+# intact — the new update.sh applies on the NEXT run. Restarting the agent is safe:
+# update.sh runs detached (its own session), so it is not a child of the agent.
+UA_DIR="${INSTALL_DIR}/update-agent"
+if [ -d "$UA_DIR" ]; then
+    write_status 96 "running" "Refreshing update-agent..."
+    ua_changed=0
+    for f in app.py update.sh; do
+        s="${SRC}/docker/update-agent/${f}"
+        [ -f "$s" ] || continue
+        if ! cmp -s "$s" "${UA_DIR}/${f}" 2>/dev/null; then
+            cp -f "$s" "${UA_DIR}/.${f}.new" \
+                && mv -f "${UA_DIR}/.${f}.new" "${UA_DIR}/${f}" \
+                && ua_changed=1
+        fi
+    done
+    chmod +x "${UA_DIR}/update.sh" 2>/dev/null || true
+    if [ "$ua_changed" = "1" ]; then
+        systemctl restart update-agent >> "$LOG_FILE" 2>&1 \
+            && echo "update-agent refreshed and restarted" >> "$LOG_FILE" \
+            || echo "WARN: update-agent restart failed (new code staged, applies next boot)" >> "$LOG_FILE"
+    fi
 fi
 
 # ==================== Success ====================

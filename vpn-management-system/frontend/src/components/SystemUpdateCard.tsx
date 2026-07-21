@@ -34,6 +34,18 @@ interface LatestInfo {
 const POLL_MS = 2000
 const RUNNING_STATES = ['running']
 
+// Compare version strings like "v1.4.3" / "1.4.3". Returns <0, 0, >0.
+function cmpVer(a: string, b: string): number {
+  const norm = (s: string) => s.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0)
+  const pa = norm(a)
+  const pb = norm(b)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
 export default function SystemUpdateCard() {
   const { toast } = useToast()
   const [version, setVersion] = useState<VersionInfo | null>(null)
@@ -43,12 +55,19 @@ export default function SystemUpdateCard() {
   const [polling, setPolling] = useState(false)
   // Which confirmation modal is open (replaces the native window.confirm()).
   const [confirm, setConfirm] = useState<null | 'update' | 'regen'>(null)
+  // Available version tags + the one picked in the specific-version selector.
+  const [versions, setVersions] = useState<string[]>([])
+  const [selectedRef, setSelectedRef] = useState<string>('')
+  // The ref the pending confirmation will install (null => default: latest).
+  const [targetRef, setTargetRef] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     systemApi.version().then((r) => setVersion(r.data)).catch(() => {})
     // Best-effort update check on mount (silent).
     systemApi.checkUpdate().then((r) => setLatest(r.data)).catch(() => {})
+    // Available tags for the specific-version / rollback picker (silent).
+    systemApi.listVersions().then((r) => setVersions(r.data?.tags ?? [])).catch(() => {})
   }, [])
 
   const stopPolling = () => {
@@ -125,7 +144,7 @@ export default function SystemUpdateCard() {
   const runUpdate = async () => {
     setConfirm(null)
     try {
-      await systemApi.startUpdate({ backup: true, run_migrations: true })
+      await systemApi.startUpdate({ ref: targetRef || undefined, backup: true, run_migrations: true })
       setStatus({ state: 'running', pct: 1, message: 'Iniciando atualização…' })
       setPolling(true)
     } catch (e: any) {
@@ -155,6 +174,11 @@ export default function SystemUpdateCard() {
   const running = polling || status?.state === 'running'
 
   const targetVersion = latest?.latest ?? latest?.target
+  // What the pending confirmation will install, and whether it's a rollback.
+  const confirmTarget = targetRef ?? (updateAvailable ? targetVersion : null)
+  const confirmIsRollback = !!(
+    targetRef && version?.current && cmpVer(targetRef, `v${version.current}`) < 0
+  )
 
   return (
     <>
@@ -250,7 +274,7 @@ export default function SystemUpdateCard() {
             <RefreshCw className={'h-4 w-4 ' + (checking ? 'animate-spin' : '')} />
             Verificar atualizações
           </Button>
-          <Button onClick={() => setConfirm('update')} disabled={running} className="gap-2">
+          <Button onClick={() => { setTargetRef(null); setConfirm('update') }} disabled={running} className="gap-2">
             <Download className="h-4 w-4" />
             {running ? 'Atualizando…' : 'Atualizar agora'}
           </Button>
@@ -259,6 +283,48 @@ export default function SystemUpdateCard() {
             Regenerar config OpenVPN
           </Button>
         </div>
+
+        {/* Specific version / rollback picker */}
+        {!running && versions.length > 0 && (
+          <div className="space-y-2 rounded-lg border border-border bg-secondary/20 p-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <RotateCcw className="h-4 w-4 text-muted-foreground" />
+              Instalar versão específica / rollback
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Instala uma versão exata. Versões anteriores à atual fazem{' '}
+              <span className="text-foreground">rollback</span> — o schema do banco é
+              preservado (sem downgrade destrutivo) e o backup pré-update fica disponível.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={selectedRef}
+                onChange={(e) => setSelectedRef(e.target.value)}
+              >
+                <option value="">Selecione uma versão…</option>
+                {versions.map((t) => {
+                  const rel = version?.current ? cmpVer(t, `v${version.current}`) : 1
+                  const label = rel === 0 ? ' (atual)' : rel < 0 ? ' — rollback' : ' — upgrade'
+                  return (
+                    <option key={t} value={t} disabled={rel === 0}>
+                      {t}{label}
+                    </option>
+                  )
+                })}
+              </select>
+              <Button
+                variant="outline"
+                disabled={!selectedRef}
+                onClick={() => { setTargetRef(selectedRef); setConfirm('update') }}
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Instalar esta versão
+              </Button>
+            </div>
+          </div>
+        )}
 
         <p className="text-xs text-muted-foreground">
           A atualização preserva os certificados/PKI do OpenVPN e não derruba
@@ -273,13 +339,13 @@ export default function SystemUpdateCard() {
       <DialogContent onClose={() => setConfirm(null)}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5 text-primary" />
-            Atualizar o sistema
+            {confirmIsRollback ? <RotateCcw className="h-5 w-5 text-amber-500" /> : <Download className="h-5 w-5 text-primary" />}
+            {confirmIsRollback ? 'Reverter o sistema' : 'Atualizar o sistema'}
           </DialogTitle>
           <DialogDescription>
-            {targetVersion ? (
-              <>Atualizar da <span className="font-mono font-medium text-foreground">v{version?.current ?? '—'}</span> para a{' '}
-              <span className="font-mono font-medium text-foreground">{targetVersion}</span>. O que vai acontecer:</>
+            {confirmTarget ? (
+              <>{confirmIsRollback ? 'Reverter' : 'Atualizar'} da <span className="font-mono font-medium text-foreground">v{version?.current ?? '—'}</span> para a{' '}
+              <span className="font-mono font-medium text-foreground">{confirmTarget}</span>. O que vai acontecer:</>
             ) : (
               <>Reconstruir os serviços na versão mais recente disponível. O que vai acontecer:</>
             )}
@@ -291,6 +357,12 @@ export default function SystemUpdateCard() {
             <Database className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
             <span><span className="font-medium text-foreground">Backup automático</span> do banco e da PKI do OpenVPN antes de tudo.</span>
           </li>
+          {confirmIsRollback && (
+            <li className="flex items-start gap-2.5">
+              <Database className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <span>Rollback: o <span className="font-medium text-foreground">schema do banco é preservado</span> (sem downgrade destrutivo). As migrações são puladas; o backup pré-update fica disponível para restauração manual, se necessário.</span>
+            </li>
+          )}
           <li className="flex items-start gap-2.5">
             <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
             <span>Serviços <span className="font-medium text-foreground">reconstruídos</span> e <span className="font-medium text-foreground">migrações</span> do banco aplicadas — pode haver uma breve indisponibilidade.</span>
@@ -304,8 +376,8 @@ export default function SystemUpdateCard() {
         <DialogFooter>
           <Button variant="outline" onClick={() => setConfirm(null)}>Cancelar</Button>
           <Button onClick={runUpdate} className="gap-2">
-            <Download className="h-4 w-4" />
-            Atualizar agora
+            {confirmIsRollback ? <RotateCcw className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+            {confirmIsRollback ? 'Reverter agora' : 'Atualizar agora'}
           </Button>
         </DialogFooter>
       </DialogContent>
