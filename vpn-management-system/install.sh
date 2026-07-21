@@ -569,6 +569,12 @@ Environment="GIT_REMOTE=$UPDATE_GIT_REMOTE"
 Environment="GIT_BRANCH=$UPDATE_GIT_BRANCH"
 Environment="ENV_FILE=/opt/vpn-management/config/.env"
 Environment="COMPOSE_FILE=/opt/vpn-management/docker-compose.yml"
+# Self-heal: on every start, adopt the agent code of the currently-deployed version.
+# update.sh syncs it into /opt/vpn-management/docker/update-agent on EVERY update
+# (forward OR rollback), so this keeps the running agent in lock-step with the system
+# version without any logic inside update.sh — a rollback through an older version and
+# back never strands the agent (and its /tags endpoint) on stale code.
+ExecStartPre=/bin/sh -c 'for f in app.py update.sh; do s=/opt/vpn-management/docker/update-agent/\$f; [ -f "\$s" ] && cp -f "\$s" $UPDATE_AGENT_DIR/\$f; done; chmod +x $UPDATE_AGENT_DIR/update.sh 2>/dev/null; exit 0'
 ExecStart=$UPDATE_AGENT_DIR/venv/bin/gunicorn -w 2 -t 300 -b 0.0.0.0:8102 app:app
 Restart=always
 RestartSec=5
@@ -577,9 +583,54 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+    # Refresh guard: restart the agent to adopt freshly-synced code, but only AFTER any
+    # in-flight update has finished — so it can never kill a running updater (which may
+    # share the agent's systemd cgroup on older versions).
+    cat > "$UPDATE_AGENT_DIR/refresh-guard.sh" << 'EOF'
+#!/bin/sh
+STATUS=/var/lib/vpn-update/status.json
+# Wait out an in-progress update (up to ~30 min) before restarting the agent.
+i=0
+while [ "$i" -lt 180 ]; do
+    grep -q '"state": "running"' "$STATUS" 2>/dev/null || break
+    sleep 10
+    i=$((i + 1))
+done
+exec systemctl restart update-agent
+EOF
+    chmod +x "$UPDATE_AGENT_DIR/refresh-guard.sh"
+
+    # Watcher: when update.sh syncs new agent code into docker/update-agent (every
+    # update), restart the agent (via the guard) so its ExecStartPre re-adopts it. The
+    # trigger is the file change, not update.sh logic, so it works for ANY updater
+    # version — this is what makes rollbacks through old versions self-heal.
+    cat > /etc/systemd/system/update-agent-refresh.service << EOF
+[Unit]
+Description=Refresh update-agent to the deployed version
+
+[Service]
+Type=oneshot
+ExecStart=$UPDATE_AGENT_DIR/refresh-guard.sh
+EOF
+
+    cat > /etc/systemd/system/update-agent-refresh.path << EOF
+[Unit]
+Description=Watch for refreshed update-agent code and reload it
+
+[Path]
+PathChanged=/opt/vpn-management/docker/update-agent/app.py
+PathChanged=/opt/vpn-management/docker/update-agent/update.sh
+Unit=update-agent-refresh.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
     # Start service (optional component — never abort the install if it fails)
     systemctl daemon-reload || true
     systemctl enable update-agent 2>/dev/null || true
+    systemctl enable update-agent-refresh.path 2>/dev/null || true
+    systemctl start update-agent-refresh.path 2>/dev/null || true
     systemctl restart update-agent 2>/dev/null || log_warn "Update Agent did not start"
 
     log_success "Update Agent installed"

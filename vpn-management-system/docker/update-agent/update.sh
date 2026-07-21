@@ -299,47 +299,13 @@ if [ "$healthy" != "1" ]; then
     fail 90 "Update failed and rollback did not restore health — check ${LOG_FILE} and backup ${bdir:-N/A}"
 fi
 
-# ==================== Refresh the host update-agent (swap files; restart deferred) ===
-# The update-agent and this updater live OUTSIDE the compose lifecycle, in
-# ${INSTALL_DIR}/update-agent (a systemd service), so the file sync above does not
-# touch them. Swap in any new agent/updater code so the change ships via a normal
-# update (no install.sh re-run). Use rename (mv), never cp-in-place, so THIS running
-# script's open inode is left intact — the new update.sh applies on the NEXT run.
-# The service RESTART is deferred until after the final status is written (below):
-# update.sh runs inside the update-agent.service cgroup, so a direct restart here
-# would SIGTERM this very process mid-run (it did — status froze at 96%).
-UA_DIR="${INSTALL_DIR}/update-agent"
-ua_changed=0
-if [ -d "$UA_DIR" ]; then
-    write_status 96 "running" "Refreshing update-agent..."
-    for f in app.py update.sh; do
-        s="${SRC}/docker/update-agent/${f}"
-        [ -f "$s" ] || continue
-        if ! cmp -s "$s" "${UA_DIR}/${f}" 2>/dev/null; then
-            cp -f "$s" "${UA_DIR}/.${f}.new" \
-                && mv -f "${UA_DIR}/.${f}.new" "${UA_DIR}/${f}" \
-                && ua_changed=1
-        fi
-    done
-    chmod +x "${UA_DIR}/update.sh" 2>/dev/null || true
-fi
-
 # ==================== Success ====================
+# NOTE: the update-agent and this script are refreshed OUT-OF-BAND by systemd, not
+# from here. An `update-agent-refresh.path` unit watches the synced agent code
+# (${INSTALL_DIR}/docker/update-agent) and restarts the agent — after any in-flight
+# update finishes — so its ExecStartPre re-adopts the deployed version. Keeping the
+# refresh in systemd (which survives rollbacks, unlike this script) means a rollback
+# through an older version and back never strands the agent on stale code.
 NEW_VERSION="$(cat "${INSTALL_DIR}/VERSION" 2>/dev/null | tr -d '[:space:]')"
 write_status 100 "done" "Update complete${NEW_VERSION:+ — now on v${NEW_VERSION}} (${NEW_SHA:0:8})"
-
-# Now (final status persisted) adopt the refreshed agent code. Defer the restart to a
-# transient unit in its OWN cgroup so it fires a few seconds after this script exits,
-# instead of killing us via the shared service cgroup. Fall back to an inline restart
-# — harmless at this point, since the done status is already written and we're exiting.
-if [ "$ua_changed" = "1" ]; then
-    if command -v systemd-run >/dev/null 2>&1; then
-        systemd-run --on-active=3 --collect systemctl restart update-agent \
-            >> "$LOG_FILE" 2>&1 \
-            && echo "update-agent restart scheduled (post-exit)" >> "$LOG_FILE" \
-            || systemctl restart update-agent >> "$LOG_FILE" 2>&1 || true
-    else
-        systemctl restart update-agent >> "$LOG_FILE" 2>&1 || true
-    fi
-fi
 exit 0
