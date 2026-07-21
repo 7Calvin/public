@@ -672,7 +672,7 @@ class TraefikService:
                     result["acme_email"] = account["Email"]
 
                 # Parse certificates
-                certs = resolver_data.get("Certificates", [])
+                certs = resolver_data.get("Certificates") or []
                 if not certs:
                     continue
 
@@ -746,7 +746,7 @@ class TraefikService:
                 for resolver_name, resolver_data in acme_data.items():
                     if not isinstance(resolver_data, dict):
                         continue
-                    certs = resolver_data.get("Certificates", [])
+                    certs = resolver_data.get("Certificates") or []
                     original_count = len(certs)
                     resolver_data["Certificates"] = [
                         c for c in certs
@@ -815,7 +815,7 @@ class TraefikService:
                 for resolver_name, resolver_data in acme_data.items():
                     if not isinstance(resolver_data, dict):
                         continue
-                    certs = resolver_data.get("Certificates", [])
+                    certs = resolver_data.get("Certificates") or []
                     original_count = len(certs)
                     resolver_data["Certificates"] = [
                         c for c in certs
