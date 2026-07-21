@@ -601,6 +601,9 @@ export const systemApi = {
   // Admin: fetch upstream and check whether a newer version exists.
   checkUpdate: () => api.get('/system/update/check'),
 
+  // Admin: list available version tags (to update to / roll back to a specific one).
+  listVersions: () => api.get('/system/update/versions'),
+
   // Admin: kick off the update. Returns a job id immediately.
   startUpdate: (payload?: { ref?: string; backup?: boolean; run_migrations?: boolean }) =>
     api.post('/system/update', payload ?? {}),

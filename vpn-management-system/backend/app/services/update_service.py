@@ -91,6 +91,10 @@ class UpdateService:
         """Fetch upstream and report whether a newer version is available."""
         return await self._get("/latest", timeout=60.0)
 
+    async def list_versions(self) -> Tuple[bool, Any]:
+        """Available version tags (newest first) for the update / rollback picker."""
+        return await self._get("/tags", timeout=60.0)
+
     async def start_update(self, ref: Optional[str] = None, backup: bool = True,
                            run_migrations: bool = True) -> Tuple[bool, Any]:
         """Kick off the update. Returns immediately with a job id; progress is
