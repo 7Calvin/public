@@ -348,6 +348,15 @@ export default function LdapSettingsCard() {
             Importa como usuários locais todos os membros do grupo da VPN no AD, sem esperar
             o primeiro login. Contas que saíram do grupo seguem a ação escolhida abaixo.
           </p>
+          <p className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Sincronização automática ativa: o grupo é sincronizado sozinho{' '}
+              <span className="font-medium text-foreground">a cada 1 hora</span> (quem sai do grupo
+              é desativado, de forma reversível). O botão abaixo continua disponível para
+              sincronizar na hora.
+            </span>
+          </p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label htmlFor="ldap-sync-mode">Quem saiu do grupo</Label>
