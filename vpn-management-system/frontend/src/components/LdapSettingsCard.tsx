@@ -207,7 +207,7 @@ export default function LdapSettingsCard() {
               id="ldap-server"
               value={form.server}
               onChange={(e) => set('server', e.target.value)}
-              placeholder="10.0.0.10 ou dc.calvin.local"
+              placeholder="10.0.0.10 ou dc.domain.local"
               className="font-mono"
             />
           </div>
@@ -258,7 +258,7 @@ export default function LdapSettingsCard() {
             id="ldap-bind-dn"
             value={form.bind_dn}
             onChange={(e) => set('bind_dn', e.target.value)}
-            placeholder={form.use_ntlm ? 'seven  (ou CALVIN\\seven)' : 'CN=svc-vpn,OU=Service,DC=calvin,DC=local'}
+            placeholder={form.use_ntlm ? 'seven  (ou DOMAIN\\seven)' : 'CN=svc-vpn,OU=Service,DC=domain,DC=local'}
             className="font-mono"
           />
           {form.use_ntlm && (
@@ -307,7 +307,7 @@ export default function LdapSettingsCard() {
               id="ldap-base"
               value={form.search_base}
               onChange={(e) => set('search_base', e.target.value)}
-              placeholder="DC=calvin,DC=local"
+              placeholder="DC=domain,DC=local"
               className="font-mono"
             />
           </div>
@@ -329,7 +329,7 @@ export default function LdapSettingsCard() {
             id="ldap-group"
             value={form.required_group_dn}
             onChange={(e) => set('required_group_dn', e.target.value)}
-            placeholder="CN=VPN-Users,OU=Groups,DC=calvin,DC=local"
+            placeholder="CN=VPN-Users,OU=Groups,DC=domain,DC=local"
             className="font-mono"
           />
           <p className="text-xs text-muted-foreground">

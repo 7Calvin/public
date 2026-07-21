@@ -561,7 +561,7 @@ export default function SettingsPage() {
                 <Input
                   value={editDomain}
                   onChange={(e) => setEditDomain(e.target.value)}
-                  placeholder="vpn.calvin.local"
+                  placeholder="vpn.domain.local"
                   className="max-w-sm font-mono"
                 />
                 <Button

@@ -342,7 +342,7 @@ export default function VPNPage() {
                       id="server_host"
                       value={configForm.server_host || ''}
                       onChange={(e) => setConfigForm({ ...configForm, server_host: e.target.value })}
-                      placeholder="vpn.calvin.local"
+                      placeholder="vpn.domain.local"
                     />
                   </div>
                   <div className="space-y-2">
@@ -503,7 +503,7 @@ export default function VPNPage() {
                     </div>
                     <div className="flex gap-2">
                       <Input
-                        placeholder="calvin.local"
+                        placeholder="domain.local"
                         value={newSplitDomain}
                         onChange={(e) => setNewSplitDomain(e.target.value)}
                         onKeyDown={(e) => {
