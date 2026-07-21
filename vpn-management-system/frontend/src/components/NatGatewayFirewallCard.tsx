@@ -124,9 +124,7 @@ export default function NatGatewayFirewallCard() {
               <div className="flex items-start gap-2 rounded-md bg-muted/60 p-2 text-[11px] text-muted-foreground">
                 <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
                 <span>
-                  Isento de NAT automaticamente (VPNs IPsec):{' '}
-                  <span className="font-mono">{autoExcludes.join(', ')}</span>. Novas conexões IPsec
-                  entram sozinhas — o IP de origem real é preservado no túnel.
+                  Isento de NAT (IPsec): <span className="font-mono">{autoExcludes.join(', ')}</span>
                 </span>
               </div>
             )}
