@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast'
 import { formatDateTime } from '@/lib/tz'
 import { Shield, ShieldOff, Trash2, Zap, Users, Network, GripVertical, Plus, ArrowRight, Server, Pencil, RefreshCw } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
+import NatGatewayFirewallCard from '@/components/NatGatewayFirewallCard'
 import type { FirewallRule } from '@/types'
 
 interface QuickRuleStatus {
@@ -646,6 +647,9 @@ export default function FirewallPage() {
           </p>
         </CardContent>
       </Card>
+
+      {/* NAT Gateway (host-as-NAT masquerade) */}
+      <NatGatewayFirewallCard />
 
       {/* Port Forwarding (DNAT) */}
       <Card>

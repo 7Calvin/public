@@ -1,7 +1,7 @@
 """
 Schemas for LDAP / Active Directory settings (admin-managed).
 """
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -51,3 +51,18 @@ class LdapTestRequest(BaseModel):
 class LdapTestResponse(BaseModel):
     success: bool
     message: Optional[str] = None
+
+
+class LdapSyncResponse(BaseModel):
+    """Result of a group-sync run (mirror AD group -> local shadow users)."""
+    success: bool
+    message: Optional[str] = None
+    dry_run: bool = False
+    delete_mode: str = "deactivate"
+    total_in_group: int = 0
+    added: int = 0
+    removed: int = 0
+    reactivated: int = 0
+    skipped: int = 0
+    added_users: List[str] = Field(default_factory=list)
+    removed_users: List[str] = Field(default_factory=list)

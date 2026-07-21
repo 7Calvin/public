@@ -53,6 +53,28 @@ async def apply_nat_rules_via_agent() -> dict:
         logger.error(f"Failed to call NAT agent: {e}")
         return {"success": False, "error": str(e)}
 
+
+async def apply_gateway_via_agent() -> dict:
+    """Ask the NAT agent to re-read the gateway config (DB) and (re)apply its rules."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{settings.NAT_AGENT_URL}/gateway/apply",
+                headers={"X-Api-Token": settings.NAT_AGENT_TOKEN},
+            )
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"Gateway NAT applied: {result}")
+                return result
+            logger.error(f"NAT agent gateway error: {response.status_code} - {response.text}")
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+    except httpx.ConnectError:
+        logger.warning("NAT agent not available - gateway settings saved but not applied")
+        return {"success": False, "error": "NAT agent not available"}
+    except Exception as e:
+        logger.error(f"Failed to call NAT agent (gateway): {e}")
+        return {"success": False, "error": str(e)}
+
 router = APIRouter()
 
 

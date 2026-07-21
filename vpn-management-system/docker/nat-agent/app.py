@@ -142,28 +142,110 @@ def clear_gateway_nat():
                 break
 
 
-def apply_gateway_nat():
-    """Install masquerade + forward rules so NAT_GATEWAY_NETWORK reaches the
-    internet through PUBLIC_INTERFACE (host-as-NAT-gateway). Idempotent.
+def detect_public_interface():
+    """Best-effort detect the uplink interface (the one on the default route to the
+    internet). On a NAT instance this is always the internet-facing NIC, so the UI
+    doesn't need to ask for it. Returns None if detection fails."""
+    try:
+        out = subprocess.run(
+            ['ip', 'route', 'get', '8.8.8.8'],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.split()
+        if 'dev' in out:
+            return out[out.index('dev') + 1]
+    except Exception as e:
+        logger.info(f"public interface auto-detect failed: {e}")
+    return None
 
-    No-op unless NAT_GATEWAY_NETWORK is configured.
+
+def resolve_interface(configured):
+    """Configured interface if given, else auto-detected, else env, else eth0."""
+    configured = (configured or '').strip()
+    if configured and configured.lower() != 'auto':
+        return configured
+    return detect_public_interface() or PUBLIC_INTERFACE or 'eth0'
+
+
+def get_ipsec_excludes(cur):
+    """Remote subnets of enabled IPsec site-to-site tunnels.
+
+    These are auto-excluded from masquerade so the peer keeps seeing the real
+    source IP (the IPsec traffic selectors match on the actual addresses). This is
+    why a new IPsec connection needs no manual NAT exception — establishing the
+    tunnel is enough. Read within an existing DB cursor.
     """
-    if not NAT_GATEWAY_NETWORK:
-        return
+    nets = []
+    try:
+        cur.execute("SELECT right_subnet FROM ipsec_connections WHERE is_enabled = true")
+        for r in cur.fetchall():
+            val = r.get('right_subnet') if isinstance(r, dict) else r[0]
+            nets += [s.strip() for s in (val or '').split(',') if s.strip()]
+    except Exception as e:  # table missing, DB error, etc.
+        logger.info(f"IPsec exclude read failed ({e})")
+    return nets
 
-    net = NAT_GATEWAY_NETWORK
-    iface = PUBLIC_INTERFACE
+
+def get_gateway_config():
+    """Return (network, iface, exclude_list) for the host-as-NAT-gateway.
+
+    Prefers the DB row (``nat_gateway_settings``, managed from the admin UI) and
+    falls back to the NAT_GATEWAY_NETWORK / PUBLIC_INTERFACE / NAT_GATEWAY_EXCLUDE
+    env vars so existing env-only deploys keep working. The interface is
+    auto-detected from the default route when not explicitly set. The exclude list
+    always includes the remote subnets of enabled IPsec tunnels (auto). Returns
+    (None, iface, []) when gateway NAT is not configured anywhere.
+    """
+    ipsec_excl = []
+    try:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT enabled, network, public_interface, exclude_networks "
+                "FROM nat_gateway_settings LIMIT 1"
+            )
+            row = cur.fetchone()
+            ipsec_excl = get_ipsec_excludes(cur)
+        finally:
+            conn.close()
+        if row and row.get('enabled') and (row.get('network') or '').strip():
+            iface = resolve_interface(row.get('public_interface'))
+            manual = [s.strip() for s in (row.get('exclude_networks') or '').split(',') if s.strip()]
+            excl = list(dict.fromkeys(manual + ipsec_excl))  # dedup, keep order
+            return row['network'].strip(), iface, excl
+    except Exception as e:  # table missing before migration, DB down, etc.
+        logger.info(f"Gateway config DB read failed ({e}); falling back to env")
+
+    if NAT_GATEWAY_NETWORK:
+        manual = [s.strip() for s in NAT_GATEWAY_EXCLUDE.split(',') if s.strip()]
+        excl = list(dict.fromkeys(manual + ipsec_excl))
+        return NAT_GATEWAY_NETWORK, resolve_interface(PUBLIC_INTERFACE), excl
+    return None, resolve_interface(PUBLIC_INTERFACE), []
+
+
+def apply_gateway_nat():
+    """Install masquerade + forward rules so the private subnet reaches the internet
+    through the public interface (host-as-NAT-gateway). Idempotent.
+
+    Config comes from the DB (nat_gateway_settings) with env fallback. No-op unless a
+    network is configured. Stale tagged rules are always cleared first, so changing
+    the network (or disabling it) never leaves an orphaned masquerade behind.
+    """
+    net, iface, exclude_nets = get_gateway_config()
+
     tag = ['-m', 'comment', '--comment', GW_NAT_COMMENT]
 
-    # Remove any stale copies first so restarts don't stack duplicates.
+    # Remove any stale copies first so restarts / network changes don't stack or orphan.
     clear_gateway_nat()
+
+    if not net:
+        return
 
     # IPsec site-to-site exemptions: traffic between the private subnet and these
     # remote networks must keep its real source IP (no masquerade) and be allowed
     # to forward in both directions. These RETURN rules are appended BEFORE the
     # MASQUERADE below so they take precedence in POSTROUTING (append order = chain
     # order on the same chain).
-    exclude_nets = [s.strip() for s in NAT_GATEWAY_EXCLUDE.split(',') if s.strip()]
     for dst in exclude_nets:
         run_iptables(
             ['-t', 'nat', '-A', 'POSTROUTING', '-s', net, '-d', dst,
@@ -379,6 +461,47 @@ def clear():
     return jsonify({'success': True, 'message': 'NAT rules cleared'})
 
 
+@app.route('/gateway/apply', methods=['POST'])
+def gateway_apply():
+    """Re-read the gateway config (DB, env fallback) and (re)install its rules.
+
+    Called by the backend after an admin changes the NAT gateway network in the UI.
+    """
+    if not check_auth():
+        return jsonify({'error': 'Unauthorized'}), 401
+    try:
+        apply_gateway_nat()
+        net, iface, excl = get_gateway_config()
+        return jsonify({
+            'success': True, 'network': net, 'interface': iface, 'exclude': excl,
+        })
+    except Exception as e:
+        logger.error(f"gateway/apply failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def wait_for_db(max_attempts=30, delay=2):
+    """Wait until Postgres accepts connections (cold-boot race guard).
+
+    On host reboot the agent may start before Postgres is ready; without this the
+    startup apply_nat_rules() failed once and left DB NAT rules unapplied until a
+    later POST /apply. Retries with a fixed backoff, then gives up (non-fatal).
+    """
+    import time
+    for attempt in range(1, max_attempts + 1):
+        try:
+            conn = get_db_connection()
+            conn.close()
+            if attempt > 1:
+                logger.info(f"Postgres reachable after {attempt} attempt(s)")
+            return True
+        except Exception as e:
+            logger.info(f"Waiting for Postgres ({attempt}/{max_attempts}): {e}")
+            time.sleep(delay)
+    logger.warning("Postgres not reachable after retries; continuing without DB NAT rules")
+    return False
+
+
 if __name__ == '__main__':
     # Enable IP forwarding
     try:
@@ -390,6 +513,7 @@ if __name__ == '__main__':
 
     # Re-assert NAT rules on startup so they survive host/container reboots
     # (previously rules only existed after a POST /apply, so a reboot dropped them).
+    wait_for_db()
     try:
         apply_gateway_nat()
     except Exception as e:
