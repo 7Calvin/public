@@ -12,7 +12,6 @@ import { TIMEZONES, getTimezone, setTimezone } from '@/lib/tz'
 import { Shield, Key, User, Lock, Copy, Check, Eye, EyeOff, Server, Pencil, RefreshCw, Save, ScrollText, Clock, Network } from 'lucide-react'
 import SystemUpdateCard from '@/components/SystemUpdateCard'
 import LdapSettingsCard from '@/components/LdapSettingsCard'
-import NatGatewayCard from '@/components/NatGatewayCard'
 import { Link, useSearchParams } from 'react-router-dom'
 
 export default function SettingsPage() {
@@ -738,9 +737,6 @@ export default function SettingsPage() {
 
       {/* Autenticação AD */}
       {user?.is_admin && tab === 'auth' && <LdapSettingsCard />}
-
-      {/* Sistema — NAT Gateway */}
-      {user?.is_admin && tab === 'sistema' && <NatGatewayCard />}
 
       {/* Sistema — Atualizações */}
       {user?.is_admin && tab === 'sistema' && <SystemUpdateCard />}

@@ -142,13 +142,38 @@ def clear_gateway_nat():
                 break
 
 
+def detect_public_interface():
+    """Best-effort detect the uplink interface (the one on the default route to the
+    internet). On a NAT instance this is always the internet-facing NIC, so the UI
+    doesn't need to ask for it. Returns None if detection fails."""
+    try:
+        out = subprocess.run(
+            ['ip', 'route', 'get', '8.8.8.8'],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.split()
+        if 'dev' in out:
+            return out[out.index('dev') + 1]
+    except Exception as e:
+        logger.info(f"public interface auto-detect failed: {e}")
+    return None
+
+
+def resolve_interface(configured):
+    """Configured interface if given, else auto-detected, else env, else eth0."""
+    configured = (configured or '').strip()
+    if configured and configured.lower() != 'auto':
+        return configured
+    return detect_public_interface() or PUBLIC_INTERFACE or 'eth0'
+
+
 def get_gateway_config():
     """Return (network, iface, exclude_list) for the host-as-NAT-gateway.
 
     Prefers the DB row (``nat_gateway_settings``, managed from the admin UI) and
     falls back to the NAT_GATEWAY_NETWORK / PUBLIC_INTERFACE / NAT_GATEWAY_EXCLUDE
-    env vars so existing env-only deploys keep working. Returns (None, iface, [])
-    when gateway NAT is not configured anywhere.
+    env vars so existing env-only deploys keep working. The interface is
+    auto-detected from the default route when not explicitly set. Returns
+    (None, iface, []) when gateway NAT is not configured anywhere.
     """
     try:
         conn = get_db_connection()
@@ -162,7 +187,7 @@ def get_gateway_config():
         finally:
             conn.close()
         if row and row.get('enabled') and (row.get('network') or '').strip():
-            iface = (row.get('public_interface') or PUBLIC_INTERFACE or 'eth0').strip()
+            iface = resolve_interface(row.get('public_interface'))
             excl = [s.strip() for s in (row.get('exclude_networks') or '').split(',') if s.strip()]
             return row['network'].strip(), iface, excl
     except Exception as e:  # table missing before migration, DB down, etc.
@@ -170,8 +195,8 @@ def get_gateway_config():
 
     if NAT_GATEWAY_NETWORK:
         excl = [s.strip() for s in NAT_GATEWAY_EXCLUDE.split(',') if s.strip()]
-        return NAT_GATEWAY_NETWORK, PUBLIC_INTERFACE, excl
-    return None, PUBLIC_INTERFACE, []
+        return NAT_GATEWAY_NETWORK, resolve_interface(PUBLIC_INTERFACE), excl
+    return None, resolve_interface(PUBLIC_INTERFACE), []
 
 
 def apply_gateway_nat():
