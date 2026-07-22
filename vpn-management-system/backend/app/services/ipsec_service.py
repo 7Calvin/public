@@ -602,6 +602,13 @@ class IPsecService:
             elif cur is not None:
                 cur["lines"].append(ln)
 
+        # Collapse SA blocks by connection name. A FAILOVER connection keeps TWO SAs up
+        # at once (primary + backup endpoints), and during a rekey there's briefly a 3rd
+        # (duplicate) SA — so counting raw SA blocks made the dashboard read "2/3" for a
+        # single connection. One entry per connection: UP if any path is up, with
+        # `active_paths` = how many endpoints are currently carrying an established SA.
+        by_conn: Dict[str, Dict[str, Any]] = {}
+        rank = {"UP": 3, "IKE_ONLY": 2, "CONNECTING": 1, "DOWN": 0}
         for blk in blocks:
             conn_name = blk["name"]
             ike_state = blk["ike_state"]
@@ -619,58 +626,59 @@ class IPsecService:
             else:
                 tunnel_status = "DOWN"
 
-            info: Dict[str, Any] = {
-                "name": conn_name,
-                "ike_status": ike_state,
-                "tunnel_status": tunnel_status,
-                "has_child_sa": has_child,
-                "status": "ESTABLISHED" if tunnel_status == "UP" else ike_state,
-                "uptime": None,
-                "local_ts": None,
-                "remote_ts": None,
-                "bytes_in": None,
-                "bytes_out": None,
-                "rekey_time": None,
-                "remote_host": None,  # which of the failover endpoints is active
-                "error_hint": None,
-            }
-            if tunnel_status == "IKE_ONLY":
-                info["error_hint"] = "IKE established but tunnel not up. Check ESP cipher compatibility."
-
-            # Active remote endpoint: "remote '<id>' @ <host>[<port>]"
             rh = re.search(r"^\s*remote\s+'[^']*'\s+@\s+(\S+?)\[", body, re.MULTILINE)
-            if rh:
-                info["remote_host"] = rh.group(1)
-
-            # Uptime: "established <N>s ago"
+            remote_host = rh.group(1) if rh else None
             up = re.search(r'established\s+([^,\n]+)', body)
-            if up:
-                info["uptime"] = up.group(1).strip()
-
-            # Bytes: "in  <spi>, <N> bytes" / "out <spi>, <N> bytes"
             bi = re.search(r'^\s*in\s+\S+,\s+(\d+)\s+bytes', body, re.MULTILINE)
             bo = re.search(r'^\s*out\s+\S+,\s+(\d+)\s+bytes', body, re.MULTILINE)
-            if bi:
-                info["bytes_in"] = int(bi.group(1))
-            if bo:
-                info["bytes_out"] = int(bo.group(1))
-
-            # Child traffic selectors (unquoted "local <cidr>" / "remote <cidr>")
             lts = re.search(r'^\s*local\s+(\d[\d./]*(?:,\s*\d[\d./]*)*)\s*$', body, re.MULTILINE)
             rts = re.search(r'^\s*remote\s+(\d[\d./]*(?:,\s*\d[\d./]*)*)\s*$', body, re.MULTILINE)
-            if lts:
-                info["local_ts"] = lts.group(1).strip()
-            if rts:
-                info["remote_ts"] = rts.group(1).strip()
-
-            # Rekey: "rekeying in <N>s"
             rk = re.search(r'rekeying in\s+(\S+)', body)
-            if rk:
-                info["rekey_time"] = rk.group(1)
 
-            result["connections"].append(info)
+            entry = by_conn.get(conn_name)
+            if entry is None:
+                entry = {
+                    "name": conn_name,
+                    "ike_status": ike_state,
+                    "tunnel_status": tunnel_status,
+                    "has_child_sa": has_child,
+                    "status": "ESTABLISHED" if tunnel_status == "UP" else ike_state,
+                    "uptime": up.group(1).strip() if up else None,
+                    "local_ts": lts.group(1).strip() if lts else None,
+                    "remote_ts": rts.group(1).strip() if rts else None,
+                    "bytes_in": int(bi.group(1)) if bi else None,
+                    "bytes_out": int(bo.group(1)) if bo else None,
+                    "rekey_time": rk.group(1) if rk else None,
+                    "remote_host": remote_host if tunnel_status == "UP" else None,
+                    "error_hint": None,
+                    "active_paths": 1 if tunnel_status == "UP" else 0,
+                }
+                by_conn[conn_name] = entry
+            else:
+                if tunnel_status == "UP":
+                    entry["active_paths"] += 1
+                # keep the healthiest SA's headline status/details
+                if rank[tunnel_status] > rank[entry["tunnel_status"]]:
+                    entry["ike_status"] = ike_state
+                    entry["tunnel_status"] = tunnel_status
+                    entry["has_child_sa"] = has_child
+                    entry["status"] = "ESTABLISHED" if tunnel_status == "UP" else ike_state
+                    if tunnel_status == "UP":
+                        entry["remote_host"] = remote_host
+                        if up:
+                            entry["uptime"] = up.group(1).strip()
+                # sum bytes across the active paths
+                if bi:
+                    entry["bytes_in"] = (entry["bytes_in"] or 0) + int(bi.group(1))
+                if bo:
+                    entry["bytes_out"] = (entry["bytes_out"] or 0) + int(bo.group(1))
+
+        for entry in by_conn.values():
+            if entry["tunnel_status"] == "IKE_ONLY":
+                entry["error_hint"] = "IKE established but tunnel not up. Check ESP cipher compatibility."
+            result["connections"].append(entry)
             result["total_connections"] += 1
-            if tunnel_status == "UP":
+            if entry["tunnel_status"] == "UP":
                 result["active_tunnels"] += 1
 
         return result

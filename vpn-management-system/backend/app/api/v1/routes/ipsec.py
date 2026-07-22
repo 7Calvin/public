@@ -3,6 +3,7 @@ IPsec Routes - StrongSwan Site-to-Site VPN Management
 """
 from typing import Optional
 from uuid import UUID
+import ipaddress
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import PlainTextResponse
@@ -511,7 +512,277 @@ async def restart_strongswan(
     )
 
 
+# ==================== Peer-device export (FortiGate / generic) ====================
+
+_DH_TO_GRP = {"modp1024": "2", "modp1536": "5", "modp2048": "14",
+              "modp3072": "15", "modp4096": "16"}
+
+
+def _split_cipher(cipher: str):
+    """'aes256-sha256-modp2048' -> ('aes256-sha256', '14') for FortiGate (proposal +
+    separate dhgrp). Falls back to sane defaults."""
+    parts = [p for p in (cipher or "").split("-") if p]
+    dhgrp = "14"
+    prop = []
+    for p in parts:
+        if p in _DH_TO_GRP:
+            dhgrp = _DH_TO_GRP[p]
+        else:
+            prop.append(p)
+    return ("-".join(prop) or "aes256-sha256"), dhgrp
+
+
+def _export_generic(c) -> str:
+    backup = (c.right_ip_backup or "").strip() or "—"
+    enc_ike = c.ike_cipher or "aes256-sha256-modp2048"
+    enc_esp = c.esp_cipher or "aes256-sha256"
+    return (
+        "# ============================================================================\n"
+        f'#  IPsec Site-to-Site — parâmetros da conexão "{c.name}"\n'
+        "#  Gerado pelo EdgeGate. Use estes dados para fechar o túnel em\n"
+        "#  QUALQUER equipamento (pfSense, Endian, MikroTik, Cisco, etc).\n"
+        "# ============================================================================\n\n"
+        "──[ NOSSO LADO — EdgeGate ]─────────────────────────────────────────\n"
+        f"  Gateway remoto (aponte o peer para cá) : {c.left_id}\n"
+        f"  IKE identifier (nosso ID)              : {c.left_id}\n"
+        f"  Rede(s) local(is) que anunciamos       : {c.left_subnet}\n\n"
+        "──[ LADO DO CLIENTE — equipamento remoto ]──────────────────────────\n"
+        f"  IP público primário                    : {c.right_ip}\n"
+        f"  IP público backup (failover, opcional) : {backup}\n"
+        f"  Rede(s) atrás do cliente               : {c.right_subnet}\n\n"
+        "──[ FASE 1 — IKE ]──────────────────────────────────────────────────\n"
+        f"  Versão                                 : {c.ike_version.value.upper()}\n"
+        f"  Autenticação                           : PSK (pre-shared key)\n"
+        f"  Pre-shared key                         : {c.psk or '—'}\n"
+        f"  Proposta (enc-hash-dh)                 : {enc_ike}\n"
+        f"  Lifetime                               : {c.ike_lifetime}\n\n"
+        "──[ FASE 2 — ESP ]──────────────────────────────────────────────────\n"
+        f"  Proposta (enc-hash[-pfs])              : {enc_esp}\n"
+        f"  Lifetime                               : {c.key_lifetime}\n\n"
+        "──[ DPD / detecção de queda ]───────────────────────────────────────\n"
+        f"  Ação                                   : {c.dpd_action.value}\n\n"
+        "──[ Notas ]─────────────────────────────────────────────────────────\n"
+        "  • Túnel roteado (route-based) recomendado.\n"
+        f"  • Traffic selectors: {c.left_subnet}  ⇄  {c.right_subnet}\n"
+        "  • NÃO aplicar NAT no tráfego do túnel (preserve os IPs reais).\n"
+    )
+
+
+def _export_fortigate(c, fortios, wan_pri, wan_bak, lan_if, sla_src, lid_pri, lid_bak) -> str:
+    prop_ike, dhgrp = _split_cipher(c.ike_cipher)
+    prop_esp, _ = _split_cipher(c.esp_cipher)
+    n = c.name
+    # first subnet only for the FortiGate address object / phase2 (keep it simple)
+    lsub = c.left_subnet.split(",")[0].strip()
+    rsub = c.right_subnet.split(",")[0].strip()
+    net = ipaddress.ip_network(lsub, strict=False)
+    lnet, lmask = str(net.network_address), str(net.netmask)
+    rnet_o = ipaddress.ip_network(rsub, strict=False)
+    rnet, rmask = str(rnet_o.network_address), str(rnet_o.netmask)
+    psk = c.psk or "<PSK>"
+    return f"""# ============================================================================
+#  EdgeGate → FortiGate  |  IPsec HA/Failover  |  conexão: {n}
+#  Alvo: FortiOS {fortios}   |   ⚠ REVISE antes de colar. Aditivo (prefixo EG_).
+# ============================================================================
+
+config firewall address
+    edit "EG_net_{lnet}"
+        set allow-routing enable
+        set subnet {lnet} {lmask}
+    next
+end
+
+config vpn ipsec phase1-interface
+    edit "EG_{n}-pri"
+        set interface "{wan_pri}"
+        set ike-version 2
+        set keylife 28800
+        set peertype any
+        set net-device disable
+        set proposal {prop_ike}
+        set dhgrp {dhgrp}
+        set localid "{lid_pri}"
+        set remote-gw {c.left_id}
+        set psksecret {psk}
+    next
+    edit "EG_{n}-bak"
+        set interface "{wan_bak}"
+        set ike-version 2
+        set keylife 28800
+        set peertype any
+        set net-device disable
+        set proposal {prop_ike}
+        set dhgrp {dhgrp}
+        set localid "{lid_bak}"
+        set remote-gw {c.left_id}
+        set psksecret {psk}
+    next
+end
+config vpn ipsec phase2-interface
+    edit "EG_{n}-pri"
+        set phase1name "EG_{n}-pri"
+        set proposal {prop_esp}
+        set dhgrp {dhgrp}
+        set auto-negotiate enable
+        set keylifeseconds 3600
+        set src-subnet {rnet} {rmask}
+        set dst-subnet {lnet} {lmask}
+    next
+    edit "EG_{n}-bak"
+        set phase1name "EG_{n}-bak"
+        set proposal {prop_esp}
+        set dhgrp {dhgrp}
+        set auto-negotiate enable
+        set keylifeseconds 3600
+        set src-subnet {rnet} {rmask}
+        set dst-subnet {lnet} {lmask}
+    next
+end
+
+config system sdwan
+    set status enable
+    config zone
+        edit "EG_zone_{n}"
+        next
+    end
+    config members
+        edit 201
+            set interface "EG_{n}-pri"
+            set zone "EG_zone_{n}"
+            set source {sla_src}
+        next
+        edit 202
+            set interface "EG_{n}-bak"
+            set zone "EG_zone_{n}"
+            set source {sla_src}
+        next
+    end
+    config health-check
+        edit "EG_sla_{n}"
+            set server "{c.left_ip}"
+            set source {sla_src}
+            set members 201 202
+            config sla
+                edit 1
+                    set latency-threshold 150
+                next
+            end
+        next
+    end
+    config service
+        edit 201
+            set name "EG_rule_{n}"
+            set mode sla
+            set dst "EG_net_{lnet}"
+            set src "all"
+            config sla
+                edit "EG_sla_{n}"
+                    set id 1
+                next
+            end
+            set priority-members 201 202
+            set priority-zone "EG_zone_{n}"
+        next
+    end
+end
+
+config router static
+    edit 0
+        set dst {lnet} {lmask}
+        set distance 1
+        set sdwan-zone "EG_zone_{n}"
+    next
+    edit 0
+        set dst {lnet} {lmask}
+        set distance 254
+        set blackhole enable
+    next
+end
+
+config firewall policy
+    edit 0
+        set name "EG_pol_{n}_out"
+        set srcintf "{lan_if}"
+        set dstintf "EG_zone_{n}"
+        set action accept
+        set srcaddr "all"
+        set dstaddr "EG_net_{lnet}"
+        set schedule "always"
+        set service "ALL"
+    next
+    edit 0
+        set name "EG_pol_{n}_in"
+        set srcintf "EG_zone_{n}"
+        set dstintf "{lan_if}"
+        set action accept
+        set srcaddr "EG_net_{lnet}"
+        set dstaddr "all"
+        set schedule "always"
+        set service "ALL"
+    next
+end
+
+# ── UNDO ─ cole para remover tudo acima ─────────────────────────────────────
+# firewall policy: delete EG_pol_{n}_out / EG_pol_{n}_in
+# router static: delete as rotas EG (dst {lnet}/{lmask})
+# system sdwan: service(del 201) → health-check(del EG_sla_{n}) → members(del 201 202) → zone(del EG_zone_{n})
+# vpn ipsec phase2/phase1-interface: delete EG_{n}-pri / EG_{n}-bak
+# firewall address: delete EG_net_{lnet}
+"""
+
+
+@router.get("/connections/{connection_id}/export", response_class=PlainTextResponse)
+async def export_connection_config(
+    connection_id: UUID,
+    target: str = Query("fortigate", pattern=r"^(fortigate|generic)$"),
+    fortios: str = "7.4",
+    wan_pri: str = "<WAN_PRI>",
+    wan_bak: str = "<WAN_BAK>",
+    lan_if: str = "<LAN_IF>",
+    sla_src: str = "<SLA_SRC>",
+    localid_pri: str = "",
+    localid_bak: str = "",
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Render this connection's config for the peer device. target=fortigate -> a
+    paste-into-CLI script (SD-WAN failover, with the REAL PSK); target=generic -> a
+    device-agnostic parameter sheet. FortiGate-specific bits come from the query."""
+    service = IPsecService(db)
+    conn = await service.get_connection_by_id(connection_id)
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IPsec connection not found")
+    if target == "generic":
+        return _export_generic(conn)
+    return _export_fortigate(
+        conn, fortios, wan_pri, wan_bak, lan_if, sla_src,
+        (localid_pri or conn.right_ip), (localid_bak or (conn.right_ip_backup or "")),
+    )
+
+
 # ==================== Config Preview ====================
+
+@router.get("/connections/{connection_id}/config", response_class=PlainTextResponse)
+async def get_connection_config(
+    connection_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """The swanctl config this single connection generates (PSK masked). Read-only —
+    lets an admin inspect exactly what gets written for this tunnel, per-connection."""
+    service = IPsecService(db)
+    conn = await service.get_connection_by_id(connection_id)
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IPsec connection not found")
+    conn_block = conn.to_swanctl()
+    secret_block = conn.to_swanctl_secret()
+    if conn.psk:
+        secret_block = secret_block.replace(f'"{conn.psk}"', '"••••••••••"')
+    return (
+        f"connections {{\n{conn_block}\n}}\n\n"
+        f"secrets {{\n{secret_block}\n}}\n"
+    )
+
 
 @router.get("/config/preview", response_model=IPsecConfigPreview)
 async def preview_ipsec_config(

@@ -574,6 +574,13 @@ export const ipsecApi = {
   // Config preview
   previewConfig: () => api.get('/ipsec/config/preview'),
 
+  // Generated swanctl config for a single connection (PSK masked), as plain text
+  connectionConfig: (id: string) => api.get(`/ipsec/connections/${id}/config`, { responseType: 'text' }),
+
+  // Export the connection for a peer device (fortigate CLI / generic params), as text
+  exportConfig: (id: string, params: Record<string, string>) =>
+    api.get(`/ipsec/connections/${id}/export`, { params, responseType: 'text' }),
+
   // Utility
   version: () => api.get('/ipsec/version'),
 

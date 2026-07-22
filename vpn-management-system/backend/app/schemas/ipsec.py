@@ -294,6 +294,7 @@ class IPsecStatusResponse(BaseModel):
     ike_status: Optional[str] = None  # IKE SA status
     tunnel_status: Optional[str] = None  # UP, DOWN, IKE_ONLY, CONNECTING
     has_child_sa: Optional[bool] = None  # Whether Child SA (ESP tunnel) is installed
+    active_paths: Optional[int] = None  # HA/failover: how many endpoints have an SA up
     uptime: Optional[str] = None
     local_ts: Optional[str] = None  # Traffic selector
     remote_ts: Optional[str] = None

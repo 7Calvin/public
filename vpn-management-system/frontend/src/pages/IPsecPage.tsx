@@ -7,6 +7,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import { useToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/PageHeader'
 import {
@@ -20,7 +28,6 @@ import {
   Network,
   Server,
   RefreshCw,
-  Settings,
   Eye,
   CheckCircle2,
   XCircle,
@@ -32,6 +39,9 @@ import {
   Zap,
   Undo2,
   ArrowLeftRight,
+  MoreVertical,
+  Download,
+  Copy,
 } from 'lucide-react'
 import type { IPsecConnection, IPsecStatus, IPsecConnectionCreate } from '@/types'
 
@@ -117,7 +127,14 @@ export default function IPsecPage() {
   const { toast } = useToast()
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [isConfigPreviewOpen, setIsConfigPreviewOpen] = useState(false)
+  const [previewConn, setPreviewConn] = useState<IPsecConnection | null>(null)
+  const [deleteConn, setDeleteConn] = useState<IPsecConnection | null>(null)
+  const [deleteText, setDeleteText] = useState('')
+  const [exportConn, setExportConn] = useState<IPsecConnection | null>(null)
+  const [exportForm, setExportForm] = useState({
+    target: 'fortigate', fortios: '7.4', wan_pri: '', wan_bak: '',
+    lan_if: '', sla_src: '', localid_pri: '', localid_bak: '',
+  })
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false)
   const [logsConnectionName, setLogsConnectionName] = useState<string | null>(null)
@@ -136,11 +153,40 @@ export default function IPsecPage() {
     refetchInterval: 10000,
   })
 
-  const { data: configPreview } = useQuery({
-    queryKey: ['ipsec-config-preview'],
-    queryFn: () => ipsecApi.previewConfig().then((res) => res.data),
-    enabled: isConfigPreviewOpen,
+  const { data: connConfig, isLoading: connConfigLoading } = useQuery({
+    queryKey: ['ipsec-conn-config', previewConn?.id],
+    queryFn: () => ipsecApi.connectionConfig(previewConn!.id).then((res) => res.data as string),
+    enabled: !!previewConn,
   })
+
+  const { data: exportText, isFetching: exportLoading } = useQuery({
+    queryKey: ['ipsec-export', exportConn?.id, exportForm],
+    queryFn: () => ipsecApi.exportConfig(exportConn!.id, {
+      target: exportForm.target,
+      fortios: exportForm.fortios,
+      wan_pri: exportForm.wan_pri || '<WAN_PRI>',
+      wan_bak: exportForm.wan_bak || '<WAN_BAK>',
+      lan_if: exportForm.lan_if || '<LAN_IF>',
+      sla_src: exportForm.sla_src || '<SLA_SRC>',
+      localid_pri: exportForm.localid_pri,
+      localid_bak: exportForm.localid_bak,
+    }).then((res) => res.data as string),
+    enabled: !!exportConn,
+  })
+
+  const downloadExport = () => {
+    if (!exportConn || !exportText) return
+    const isFg = exportForm.target === 'fortigate'
+    const fname = isFg ? `${exportConn.name}_fortigate.conf` : `${exportConn.name}_ipsec-params.txt`
+    const blob = new Blob([exportText], { type: 'text/plain' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = fname
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    toast({ title: `Baixado ${fname}` })
+  }
 
   const { data: serverInfo } = useQuery<ServerInfo>({
     queryKey: ['ipsec-server-info'],
@@ -323,22 +369,6 @@ export default function IPsecPage() {
     },
   })
 
-  const applyMutation = useMutation({
-    mutationFn: () => ipsecApi.apply(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
-      queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
-      toast({ title: 'Configuração aplicada com sucesso' })
-    },
-    onError: (error: Error & { response?: { data?: { detail?: string } } }) => {
-      toast({
-        variant: 'destructive',
-        title: 'Falha ao aplicar configuração',
-        description: error.response?.data?.detail || 'Erro desconhecido',
-      })
-    },
-  })
-
   const syncStatusMutation = useMutation({
     mutationFn: () => ipsecApi.syncStatus(),
     onSuccess: () => {
@@ -401,29 +431,31 @@ export default function IPsecPage() {
       return
     }
 
-    const updateData: Partial<ConnectionForm> = {
-      name: formData.name,
-      description: formData.description,
-      left_ip: formData.left_ip,
-      left_subnet: formData.left_subnet,
-      left_id: formData.left_id,
-      right_ip: formData.right_ip,
-      right_ip_backup: formData.right_ip_backup,
-      right_subnet: formData.right_subnet,
-      right_id: formData.right_id,
-      auth_method: formData.auth_method,
-      ike_version: formData.ike_version,
-      ike_cipher: formData.ike_cipher,
-      ike_lifetime: formData.ike_lifetime,
-      esp_cipher: formData.esp_cipher,
-      key_lifetime: formData.key_lifetime,
-      auto_start: formData.auto_start,
-      dpd_action: formData.dpd_action,
-      is_enabled: formData.is_enabled,
+    // Send ONLY changed fields (diff against the loaded connection). This makes the edit
+    // a true partial update: a field the user didn't touch is never re-submitted, so it
+    // can never accidentally wipe stored values (e.g. right_id / right_ip_backup when you
+    // only edit the PSK). The backend's update schema is all-optional, so this is safe.
+    const orig = editingConnection
+    const updateData: Partial<ConnectionForm> = {}
+    const strFields: (keyof ConnectionForm)[] = [
+      'name', 'description', 'left_ip', 'left_subnet', 'left_id',
+      'right_ip', 'right_ip_backup', 'right_subnet', 'right_id',
+      'auth_method', 'ike_version', 'ike_cipher', 'ike_lifetime',
+      'esp_cipher', 'key_lifetime', 'dpd_action',
+    ]
+    for (const f of strFields) {
+      const next = ((formData[f] as string) ?? '').trim()
+      const prev = (((orig as unknown as Record<string, unknown>)[f] as string) ?? '').trim()
+      if (next !== prev) (updateData as Record<string, unknown>)[f] = next
     }
+    if (formData.auto_start !== (orig.auto_start ?? true)) updateData.auto_start = formData.auto_start
+    if (formData.is_enabled !== (orig.is_enabled ?? true)) updateData.is_enabled = formData.is_enabled
+    if (formData.psk && formData.psk !== '********') updateData.psk = formData.psk
 
-    if (formData.psk && formData.psk !== '********') {
-      updateData.psk = formData.psk
+    if (Object.keys(updateData).length === 0) {
+      toast({ title: 'Nenhuma alteração para salvar' })
+      setIsEditModalOpen(false)
+      return
     }
 
     updateMutation.mutate({
@@ -492,28 +524,10 @@ export default function IPsecPage() {
         title="IPsec"
         subtitle="Túneis site-to-site (StrongSwan)"
         actions={
-          <>
-            <Button variant="outline" onClick={() => setIsConfigPreviewOpen(true)}>
-              <Eye className="h-4 w-4 mr-2" />
-              Visualizar Configuração
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => applyMutation.mutate()}
-              disabled={applyMutation.isPending}
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Aplicar Configuração
-            </Button>
-            <Button variant="outline" onClick={() => setConfirmRestartSS(true)}>
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Reiniciar StrongSwan
-            </Button>
-            <Button onClick={openAddModal}>
-              <Plus className="h-4 w-4 mr-2" />
-              Adicionar Conexão
-            </Button>
-          </>
+          <Button onClick={openAddModal}>
+            <Plus className="h-4 w-4 mr-2" />
+            Adicionar Conexão
+          </Button>
         }
       />
 
@@ -564,6 +578,16 @@ export default function IPsecPage() {
           </Button>
           <Button variant="ghost" size="sm" onClick={() => refetchStatus()}>
             <RefreshCw className="h-4 w-4" />
+          </Button>
+          <div className="w-px h-5 bg-border mx-0.5" aria-hidden="true" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setConfirmRestartSS(true)}
+            title="Reiniciar o serviço StrongSwan (derruba e renegocia todos os túneis)"
+          >
+            <RotateCcw className="h-4 w-4 mr-1" />
+            Reiniciar
           </Button>
         </div>
       </div>
@@ -723,38 +747,16 @@ export default function IPsecPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openLogsForConnection(conn.name)}
-                              title="Ver logs desta conexão"
-                            >
-                              <FileText className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => openEditModal(conn)} title="Editar conexão">
-                              <Pencil className="h-4 w-4" />
-                            </Button>
                             {conn.status === 'active' ? (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => restartMutation.mutate(conn.id)}
-                                  disabled={restartMutation.isPending}
-                                  title="Reiniciar túnel"
-                                >
-                                  <RotateCcw className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => stopMutation.mutate(conn.id)}
-                                  disabled={stopMutation.isPending}
-                                  title="Parar túnel"
-                                >
-                                  <Square className="h-4 w-4" />
-                                </Button>
-                              </>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => stopMutation.mutate(conn.id)}
+                                disabled={stopMutation.isPending}
+                                title="Parar túnel"
+                              >
+                                <Square className="h-4 w-4" />
+                              </Button>
                             ) : (
                               <Button
                                 variant="ghost"
@@ -766,50 +768,72 @@ export default function IPsecPage() {
                                 <Play className="h-4 w-4" />
                               </Button>
                             )}
-                            {conn.right_ip_backup && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => testFailoverMutation.mutate(conn.id)}
-                                  disabled={testFailoverMutation.isPending}
-                                  title="Testar failover (bloqueia o caminho ativo e verifica a volta pelo backup; auto-restaura)"
-                                >
-                                  <Zap className="h-4 w-4" />
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" title="Mais ações">
+                                  <MoreVertical className="h-4 w-4" />
                                 </Button>
-                                {conn.prefer_backup ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => rollbackMutation.mutate(conn.id)}
-                                    disabled={rollbackMutation.isPending}
-                                    title="Rollback: voltar a preferir o IP primário"
-                                  >
-                                    <Undo2 className="h-4 w-4" />
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => switchBackupMutation.mutate(conn.id)}
-                                    disabled={switchBackupMutation.isPending}
-                                    title="Switch manual: preferir o IP de backup"
-                                  >
-                                    <ArrowLeftRight className="h-4 w-4" />
-                                  </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                <DropdownMenuItem onSelect={() => openEditModal(conn)}>
+                                  <Pencil className="h-4 w-4" /> Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => setPreviewConn(conn)}>
+                                  <Eye className="h-4 w-4" /> Ver config gerada
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => openLogsForConnection(conn.name)}>
+                                  <FileText className="h-4 w-4" /> Ver logs
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => setExportConn(conn)}>
+                                  <Download className="h-4 w-4" /> Baixar config
+                                </DropdownMenuItem>
+                                {conn.status === 'active' && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      disabled={restartMutation.isPending}
+                                      onSelect={() => restartMutation.mutate(conn.id)}
+                                    >
+                                      <RotateCcw className="h-4 w-4" /> Reiniciar túnel
+                                    </DropdownMenuItem>
+                                  </>
                                 )}
-                              </>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => deleteMutation.mutate(conn.id)}
-                              disabled={deleteMutation.isPending}
-                              className="text-destructive hover:text-destructive"
-                              title="Excluir conexão"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                                {conn.right_ip_backup && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuLabel>Failover</DropdownMenuLabel>
+                                    <DropdownMenuItem
+                                      disabled={testFailoverMutation.isPending}
+                                      onSelect={() => testFailoverMutation.mutate(conn.id)}
+                                    >
+                                      <Zap className="h-4 w-4" /> Testar failover
+                                    </DropdownMenuItem>
+                                    {conn.prefer_backup ? (
+                                      <DropdownMenuItem
+                                        disabled={rollbackMutation.isPending}
+                                        onSelect={() => rollbackMutation.mutate(conn.id)}
+                                      >
+                                        <Undo2 className="h-4 w-4" /> Rollback para o primário
+                                      </DropdownMenuItem>
+                                    ) : (
+                                      <DropdownMenuItem
+                                        disabled={switchBackupMutation.isPending}
+                                        onSelect={() => switchBackupMutation.mutate(conn.id)}
+                                      >
+                                        <ArrowLeftRight className="h-4 w-4" /> Switch para backup
+                                      </DropdownMenuItem>
+                                    )}
+                                  </>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  destructive
+                                  onSelect={() => { setDeleteConn(conn); setDeleteText('') }}
+                                >
+                                  <Trash2 className="h-4 w-4" /> Excluir
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </td>
                       </tr>
@@ -1314,32 +1338,123 @@ export default function IPsecPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Config Preview Modal */}
-      <Dialog open={isConfigPreviewOpen} onOpenChange={setIsConfigPreviewOpen}>
-        <DialogContent onClose={() => setIsConfigPreviewOpen(false)} className="max-w-3xl max-h-[80vh]">
+      {/* Per-connection generated config */}
+      <Dialog open={!!previewConn} onOpenChange={(o) => { if (!o) setPreviewConn(null) }}>
+        <DialogContent onClose={() => setPreviewConn(null)} className="max-w-3xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Visualização da Configuração</DialogTitle>
-            <DialogDescription>Prévia dos arquivos ipsec.conf e ipsec.secrets gerados</DialogDescription>
+            <DialogTitle>Config gerada — {previewConn?.name}</DialogTitle>
+            <DialogDescription>O que o EdgeGate escreve no swanctl para esta conexão (PSK oculto)</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div>
-              <h3 className="font-medium mb-2">ipsec.conf</h3>
-              <pre className="p-4 bg-muted rounded-lg text-xs overflow-auto max-h-60 font-mono">
-                {configPreview?.ipsec_conf || 'Carregando...'}
-              </pre>
+          <div className="mt-4">
+            <pre className="p-4 bg-muted rounded-lg text-xs overflow-auto max-h-[55vh] font-mono whitespace-pre">
+              {connConfigLoading ? 'Carregando...' : (connConfig || 'Sem config gerada.')}
+            </pre>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewConn(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation (type-to-confirm) */}
+      <Dialog open={!!deleteConn} onOpenChange={(o) => { if (!o) { setDeleteConn(null); setDeleteText('') } }}>
+        <DialogContent onClose={() => { setDeleteConn(null); setDeleteText('') }} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" /> Excluir conexão
+            </DialogTitle>
+            <DialogDescription>
+              Remove o túnel <span className="font-semibold text-foreground">{deleteConn?.name}</span> e derruba a conexão IPsec. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 space-y-2">
+            <Label htmlFor="del-confirm">
+              Para confirmar, digite o nome do túnel: <span className="font-mono text-foreground">{deleteConn?.name}</span>
+            </Label>
+            <Input
+              id="del-confirm"
+              value={deleteText}
+              onChange={(e) => setDeleteText(e.target.value)}
+              placeholder={deleteConn?.name}
+              autoComplete="off"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteConn(null); setDeleteText('') }}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteText !== deleteConn?.name || deleteMutation.isPending}
+              onClick={() => {
+                if (!deleteConn) return
+                deleteMutation.mutate(deleteConn.id)
+                setDeleteConn(null); setDeleteText('')
+              }}
+            >
+              {deleteMutation.isPending ? 'Excluindo…' : 'Excluir'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export config for the peer device */}
+      <Dialog open={!!exportConn} onOpenChange={(o) => { if (!o) setExportConn(null) }}>
+        <DialogContent onClose={() => setExportConn(null)} className="max-w-4xl max-h-[88vh]">
+          <DialogHeader>
+            <DialogTitle>Baixar config — {exportConn?.name}</DialogTitle>
+            <DialogDescription>FortiGate = script de CLI (SD-WAN + failover, com o PSK real); Genérico = parâmetros para qualquer equipamento.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4 mt-3">
+            <div className="space-y-3 overflow-auto max-h-[60vh] pr-1">
+              <div>
+                <Label>Formato</Label>
+                <Select
+                  value={exportForm.target}
+                  onChange={(e) => setExportForm((f) => ({ ...f, target: e.target.value }))}
+                  options={[{ value: 'fortigate', label: 'FortiGate (CLI)' }, { value: 'generic', label: 'Genérico (parâmetros)' }]}
+                />
+              </div>
+              {exportForm.target === 'fortigate' && (
+                <>
+                  <div>
+                    <Label>Versão FortiOS</Label>
+                    <Select
+                      value={exportForm.fortios}
+                      onChange={(e) => setExportForm((f) => ({ ...f, fortios: e.target.value }))}
+                      options={[{ value: '7.4', label: '7.4' }, { value: '7.2', label: '7.2' }, { value: '7.0', label: '7.0' }]}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><Label>WAN primário</Label><Input value={exportForm.wan_pri} onChange={(e) => setExportForm((f) => ({ ...f, wan_pri: e.target.value }))} placeholder="wan2" /></div>
+                    <div><Label>WAN backup</Label><Input value={exportForm.wan_bak} onChange={(e) => setExportForm((f) => ({ ...f, wan_bak: e.target.value }))} placeholder="wan1" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><Label>Interface LAN</Label><Input value={exportForm.lan_if} onChange={(e) => setExportForm((f) => ({ ...f, lan_if: e.target.value }))} placeholder="VLAN 10" /></div>
+                    <div><Label>Source do SLA</Label><Input value={exportForm.sla_src} onChange={(e) => setExportForm((f) => ({ ...f, sla_src: e.target.value }))} placeholder="192.168.128.1" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><Label>Local ID primário</Label><Input value={exportForm.localid_pri} onChange={(e) => setExportForm((f) => ({ ...f, localid_pri: e.target.value }))} placeholder={exportConn?.right_ip} /></div>
+                    <div><Label>Local ID backup</Label><Input value={exportForm.localid_bak} onChange={(e) => setExportForm((f) => ({ ...f, localid_bak: e.target.value }))} placeholder={exportConn?.right_ip_backup || ''} /></div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">O source do SLA precisa ser um IP do Forti dentro da rede do cliente.</p>
+                </>
+              )}
+              {exportForm.target === 'generic' && (
+                <p className="text-xs text-muted-foreground">Só os parâmetros da IPsec — para configurar em pfSense, Endian, MikroTik, etc.</p>
+              )}
             </div>
-            <div>
-              <h3 className="font-medium mb-2">ipsec.secrets</h3>
-              <pre className="p-4 bg-muted rounded-lg text-xs overflow-auto max-h-40 font-mono">
-                {configPreview?.ipsec_secrets || 'Carregando...'}
+            <div className="min-w-0">
+              <pre className="p-4 bg-muted rounded-lg text-xs overflow-auto max-h-[60vh] font-mono whitespace-pre">
+                {exportLoading ? 'Gerando…' : (exportText || '')}
               </pre>
-              <p className="text-xs text-muted-foreground mt-1">Aviso: Contém valores sensíveis de PSK</p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsConfigPreviewOpen(false)}>Fechar</Button>
-            <Button onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending}>
-              {applyMutation.isPending ? 'Aplicando...' : 'Aplicar Configuração'}
+            <Button variant="outline" onClick={() => setExportConn(null)}>Fechar</Button>
+            <Button variant="outline" onClick={() => { if (exportText) { navigator.clipboard?.writeText(exportText); toast({ title: 'Config copiada' }) } }}>
+              <Copy className="h-4 w-4 mr-2" /> Copiar
+            </Button>
+            <Button onClick={downloadExport} disabled={!exportText}>
+              <Download className="h-4 w-4 mr-2" /> Baixar
             </Button>
           </DialogFooter>
         </DialogContent>
