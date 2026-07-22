@@ -1,12 +1,31 @@
 # EdgeGate - Development Progress
 
-## Status: v1.2.1 - Múltiplas Subnets IPsec
+## Status: v1.5.2 (lançado) · v1.6.0 IPsec HA/Failover (na branch `feature/ipsec-failover`)
 
-Sistema completo com OpenVPN (client-to-site) e StrongSwan IPsec (site-to-site).
+Sistema completo com OpenVPN (client-to-site) e StrongSwan IPsec (site-to-site, **swanctl/vici**).
 
 ---
 
 ## Changelog
+
+### 2026-07-22 (v1.6.0 — IPsec HA/Failover · NA BRANCH `feature/ipsec-failover`, ainda não lançado)
+
+> Detalhe completo em `docs/ipsec-ha-failover.md` §8–§12. Validado ao vivo (inclusive queda real de link pelo FortiGate). Aguardando merge na `main` + release.
+
+#### Funcionalidades
+- **Failover ativo/standby** — 2º endpoint do peer (`right_ip_backup`); `remote_addrs = primário, backup` (swanctl multi-homing). DPD rápido (~30-42s) via `dpd_delay=10s` + retransmit afinado.
+- **Botões de ops** por conexão — Testar failover, Switch manual, Rollback.
+- **Export de config do peer** — `⋮ → Baixar config`: FortiGate (script de CLI SD-WAN pronto, PSK real) ou Genérico (folha de parâmetros p/ pfSense/Endian/etc).
+- **Ver config gerada** (👁) por conexão; **Excluir** com type-to-confirm; UI limpa com dropdown `⋮` e header enxuto.
+
+#### Correções
+- PSK cobrindo todos os ids do peer + cada IP em forma `1.2.3.4` **e** `@1.2.3.4` (FortiGate manda IP-id como string).
+- `remote{}` sem `id` pinado; `PUT /connections` não retorna mais 500 (DetachedInstanceError); edit-form diff-based (não apaga Peer ID/backup); dashboard "2/3" → "1/1" (agrupa por conexão).
+
+### 2026-07-21 (v1.5.0 / v1.5.1 / v1.5.2 — Migração para swanctl)
+- **v1.5.0**: strongSwan migrado de legacy `ipsec.conf` para **swanctl/vici**; auto-migração no `update.sh` (host legacy migra sozinho ao atualizar); rollback abaixo de 1.5.0 negado.
+- **v1.5.1**: `update.sh` conserta o bind-mount do traefik que derrubava no reboot.
+- **v1.5.2**: backend aplica a config IPsec no startup (túneis auto-carregam após restart/migração). Prod `alphaquimica` migrada.
 
 ### 2026-02-05 (v1.2.1 - Melhorias IPsec + MFA Fix)
 

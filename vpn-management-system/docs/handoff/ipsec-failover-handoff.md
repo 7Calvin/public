@@ -9,8 +9,8 @@ Last updated: 2026-07-22 (end of session).
 ## TL;DR — where we are
 
 - **Released & functional:** `v1.5.2` — swanctl IPsec (running in prod "alphaquimica" and on the homolog box).
-- **In progress (this branch, NOT released):** the **IPsec HA/failover feature** — a peer (FortiGate) with **2 fixed public IPs**; the tunnel fails over between them.
-- **Where it's deployed:** manually on the **homolog box** (`/opt/vpn-management`, backend rebuilt by hand). This branch (`feature/ipsec-failover`) is the same code, now committed. It is **not** on `main` and **not** released.
+- **COMPLETE on this branch (NOT released yet):** the **IPsec HA/failover feature** — a peer (FortiGate) with **2 fixed public IPs**; the tunnel fails over between them. Built, **validated live** (incl. a real primary-link-down from the FortiGate), and pushed as `452b254 → 29fa919 → eddee80`. Awaiting merge to `main` + release (~v1.6.0). Full detail: `docs/ipsec-ha-failover.md` §8–§12.
+- **Where it's deployed:** manually on the **homolog box** (`/opt/vpn-management`, backend/frontend rebuilt by hand). This branch (`feature/ipsec-failover`) is the same code, committed + on origin. Not on `main`, not released.
 - **Current tunnel state on homolog:** both primary and backup **ESTABLISHED + INSTALLED**.
 
 ## What this branch adds
@@ -39,35 +39,43 @@ Moved off equal-distance/equal-weight static routes (which caused **ECMP → asy
 
 - **RESOLVED:** SLA health-check wouldn't come UP because the probe was **sourced from an IP outside** the protected subnet (`192.168.1.2` tunnel-iface / WAN). Fixed on the FortiGate: set the health-check **source** to an IP inside the remote subnet.
 
-## ⏭️ RESUME HERE — open item (FortiGate NAT)
+## Status — COMPLETE & validated (2026-07-22)
 
-Hosts **behind** the FortiGate still can't reach the `10.10.x` side, even though the SLA works. FortiGate diag showed the same packet twice: the original client source **immediately followed by the WAN IP** — i.e. the **LAN→SD-WAN firewall policy has NAT enabled**, SNAT-ing transit traffic to the WAN IP, which falls **outside the phase2 selector** → our side drops it → no reply.
+The whole feature is built, tested live, and pushed to the branch. The full record —
+final swanctl format, every bug + fix, the FortiGate-side setup/gotchas, the export
+feature, the live-failover validation, and the architecture decision — is in
+**`docs/ipsec-ha-failover.md` (§8–§12)**. Highlights:
 
-**Fix (FortiGate):**
-```
-config firewall policy
-    edit <LAN→SD-WAN policy>
-        set nat disable
-    next
-end
-```
-Site-to-site must preserve the client's real source. If that policy also serves internet, split out a VPN-destination policy (`dst 10.10.0.0/16`, `nat disable`) above the generic one.
+- **Live failover proven** two ways: the *Testar failover* button (blocked the active
+  endpoint → DPD → moved to backup in ~42s → auto-restored), and a **real primary
+  link-down from the FortiGate** (`set status down` on the primary tunnel interface —
+  no management loss) where the EG carried all traffic on the backup during the outage
+  and returned to primary ~5s after `set status up`.
+- **Resolved items** that used to be open here: the FortiGate transit-NAT (it was a
+  **stale cached session**, not the policy — fixed with `diagnose sys session clear`;
+  the route was already `via sdwan-zone`); NAT-T `enable` on the primary phase1; the
+  SLA `source` inside the protected subnet.
+- **Edit-form wipe FIXED** — the form is now diff-based (only changed fields sent).
 
-**Verify from our (strongSwan) side:**
-```
-tcpdump -ni any "icmp[icmptype]=icmp-echo and dst net 10.10.0.0/16"
-```
-After the fix the post-NAT WAN-IP line disappears and real `192.168.128.x → 10.10.x` requests arrive decrypted and get replies.
+## Architecture decision (2026-07-22): keep "A" — single-connection active/standby
 
-## Known caveats / TODO before releasing (~v1.6.0)
+`remote_addrs = [primary, backup]`, both SAs up in parallel, one outbound path. Covers
+the real need (link-down failover). The **two-tunnel route-based split** (needed for
+per-member SD-WAN SLA staying green while idle, latency-based failover, and load-balance)
+is **shelved** — only revisit if the requirement becomes "fail over on quality, not just
+on down". Accepted trade-off: the backup member shows down-while-idle in the FortiGate
+dashboard (self-heals on real failover). The test-failover auto-restore hardening was
+also **dropped** (only leaks a stuck iptables block if the agent restarts within the 120s
+window — a dev-churn artifact, not normal use).
 
-- **Panel edit form wipes `right_id` / `right_ip_backup`** when saving without touching them (the form re-submits them empty) — unfixed UI bug in `IPsecPage.tsx` (`openEditModal`/`updateData`). Not load-bearing after Bug 3's fix, but fix before release.
-- **Per-member SLA on the backup won't stay UP** with the current single-connection design: both CHILD_SAs share `reqid`, so our outbound is pinned to the primary → replies to backup-sourced probes return via primary → asymmetric. Plain active/standby (fail over on primary-down/DPD) is fine as-is. Health-checking **both** members cleanly would need **two separate tunnels/connections with distinct selectors** on our side — decide before release.
-- Then: merge to `main` + cut the release.
+## TODO before releasing (~v1.6.0)
+
+Only one thing left, then ship: **merge `feature/ipsec-failover` → `main` + cut the
+release**. Do NOT release unprompted — the user validates and signals when.
 
 ## How to resume on a new machine
 
-1. `git fetch && git checkout feature/ipsec-failover` (this branch).
+1. `git fetch && git checkout feature/ipsec-failover`.
 2. Re-provide SSH access to the homolog + web-panel creds in chat (kept out of git).
-3. Do the FortiGate `set nat disable` and re-run the tcpdump verify above.
+3. Read `docs/ipsec-ha-failover.md` §8–§12 for the complete final state.
 4. The homolog deploy is **manual** (outside git) — connecting to it doesn't depend on which PC you use.

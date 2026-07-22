@@ -2,9 +2,11 @@
 
 > Documento de levantamento, decisões e plano da feature de **IPsec com alta disponibilidade / failover** para um cliente que conecta com **2 IPs fixos**, junto da **migração do strongSwan legacy (`ipsec.conf`) para swanctl/vici**.
 >
-> Ambiente de desenvolvimento/validação: **box de homolog `107.20.115.56`** (o IP pode mudar entre sessões). **Sem releases durante o desenvolvimento** — trabalho direto no homolog; release só quando estiver validado.
+> Ambiente de desenvolvimento/validação: **box de homolog** (o IP público muda entre reboots). **Sem releases durante o desenvolvimento** — trabalho direto no homolog; release só quando estiver validado.
 >
-> Última atualização: 2026-07-21.
+> Última atualização: 2026-07-22.
+
+> **STATUS: feature COMPLETA, testada ao vivo e versionada** na branch `feature/ipsec-failover` (commits `452b254` → `29fa919` → `eddee80`, no origin). O swanctl foi lançado em **v1.5.0–v1.5.2**; o failover + UI + export estão na branch aguardando merge/release (**~v1.6.0**). As seções **1–7** abaixo são o registro de design/migração (histórico). O estado final, os bugs corrigidos, o lado do FortiGate, o export e a validação estão nas seções **8–12**.
 
 ---
 
@@ -76,17 +78,20 @@ Testado no homolog (carregou e listou com os 2 IPs). Formato do `/etc/swanctl/co
 connections {
     <name> {
         version = 2
-        local_addrs = %any
+        local_addrs = <left_ip>
         remote_addrs = <right_ip>, <right_ip_backup>   # <-- failover nativo: 2 IPs fixos
+                                                       #     (ordem invertida se prefer_backup)
         proposals = aes256-sha256-modp2048              # <- do ike_cipher
-        dpd_delay = 30s
+        rekey_time = <ike_lifetime>
+        dpd_delay = 10s                                 # detecção rápida p/ failover
         local {
             auth = psk
             id = <left_id>
         }
         remote {
             auth = psk
-            id = <right_id>
+            # SEM `id` pinado: com backup, o peer apresenta um IP-id diferente por caminho,
+            # então aceitamos qualquer id aqui. Segurança = remote_addrs (IPs de origem) + PSK.
         }
         children {
             <name>-net {
@@ -94,21 +99,27 @@ connections {
                 remote_ts = <right_subnet>
                 esp_proposals = aes256-sha256            # <- do esp_cipher
                 dpd_action = restart                     # <- do dpd_action (failover)
-                start_action = trap                      # trap (inicia no tráfego) ou start
-                rekey_time = 1h                          # <- do key_lifetime
+                start_action = start                     # start ou trap
+                rekey_time = <key_lifetime>
             }
         }
     }
 }
 secrets {
     ike-<name> {
-        id = <right_id>
+        # TODOS os ids possíveis do peer, cada IP em DUAS formas: endereço e @string.
+        id-1 = <left_id>          id-2 = @<left_id>
+        id-3 = <right_id>         # se != dos IPs
+        id-4 = <right_ip>         id-5 = @<right_ip>
+        id-6 = <right_ip_backup>  id-7 = @<right_ip_backup>
         secret = "<psk>"
     }
 }
 ```
 
 Failover: `remote_addrs` com 2 IPs → charon tenta em ordem ao iniciar e aceita de qualquer um como responder; com `dpd_action=restart`, ao detectar peer morto ele re-inicia rotacionando pro próximo IP. Como os subnets são os mesmos, não há conflito de traffic selectors.
+
+**⚠️ Duas correções essenciais (aprendidas ao vivo — ver §9):** (1) **NÃO pinar `id` no bloco `remote {}`** — com backup o peer autentica de IPs diferentes. (2) O **secret precisa listar todos os ids do peer, e cada IP em forma de endereço (`1.2.3.4`) E de string (`@1.2.3.4`)** — alguns peers (FortiGate com "Local ID" em texto) mandam um IP-id como **FQDN/KEY_ID (string)**, não como endereço IPv4; sem a forma `@` dá `no shared key found` e a auth falha.
 
 ## 5. Plano de migração / execução
 
@@ -173,10 +184,56 @@ Estratégia decidida: **subir um túnel IPsec real funcionando por UM link** (fu
 - **nat-agent**: sem mudança (mesmo `right_subnet`). Confirmar que continua excluindo do masquerade após a migração.
 - **install.sh**: hoje instala strongSwan legacy; precisa passar a instalar swanctl e habilitar `strongswan.service`.
 
-## 8. Estado atual do homolog (2026-07-21)
+## 8. Feature de failover — o que foi construído
 
-**Rodando em swanctl** (`strongswan.service` ativo, `strongswan-starter` **masked**). O backend + ipsec-agent estão com o **código swanctl deployado** (backend rebuildado; `/opt/vpn-management/ipsec-agent/app.py` = versão swanctl). Túnel real **`to-macro01` UP** (único no DB e no swanctl; conexões de teste já limpas). Painel/login funcional.
+Migração swanctl entregue em **v1.5.0** (código + auto-migração), **v1.5.1** (update.sh conserta o bind-mount do traefik que derruba no reboot), **v1.5.2** (backend aplica a config IPsec no startup — túneis auto-carregam após restart/migração). Prod (`alphaquimica`) migrada pra swanctl. O **failover** em si está na branch `feature/ipsec-failover` (não lançado ainda):
 
-> Nota: o deploy no homolog foi feito **manualmente** (scp dos arquivos + rebuild do container backend + restart do ipsec-agent), **sem release** — o repo tem as mudanças só na working tree.
+- **Campos**: `right_ip_backup` (2º IP do peer; migration `012`) e `prefer_backup` (migration `013`, `server_default=false`). `right_id` pode ser vazio (default = `right_ip`).
+- **Geração**: `_remote_addrs()` monta `remote_addrs = primário, backup` (ordem invertida quando `prefer_backup`). `to_swanctl_secret()` emite todos os ids + cada IP em forma endereço e `@string` (ver §4/§9).
+- **Botões de ops** (por conexão): **Testar failover** (bloqueia o caminho ativo e verifica a volta pelo backup; auto-restaura em 120s), **Switch manual** (força o backup: bloqueia o primário + restart), **Rollback** (volta pro primário + desbloqueia). Endpoints: `/connections/{id}/test-failover`, `/switch-backup`, `/rollback-primary`.
+- **ipsec-agent**: `/block-peer`, `/unblock-peer`, `/test-failover-block` (INBOUND-only — ver §9), `/active-remote` (lê a política XFRM de saída = qual endpoint carrega tráfego; único sinal confiável com 2 SAs up).
 
-**Próximo passo**: fechar os polimentos do Marco 3 (seção 5) — em especial `right_ip_backup` + migration + UI — e então o **teste de failover ao vivo** com o cliente nos 2 IPs (seção 6, passos 4-5): adicionar o 2º IP em `remote_addrs`, derrubar o caminho ativo e ver o túnel voltar pelo outro.
+## 9. Bugs encontrados e corrigidos (todos validados ao vivo)
+
+| # | Sintoma | Causa | Fix |
+|---|---|---|---|
+| 1 | Auth falha pelo IP de backup (retransmit silencioso) | secret só listava o IP primário; `remote{}` pinava o id do primário | secret com todos os ids; sem pin de id no `remote{}` |
+| 2 | `no shared key found` mesmo com o IP no secret | FortiGate manda "Local ID" em texto como **ID_FQDN (string)**, não IPv4-addr → tipo não bate | emitir cada IP em **duas formas**: `1.2.3.4` **e** `@1.2.3.4` |
+| 3 | `PUT /connections` retorna 500 mas salva | serializava o objeto ORM após awaits que expiraram atributos → `DetachedInstanceError` | re-buscar (`get_connection_by_id`) antes de retornar |
+| 4 | Edit apagava Peer ID / IP de backup | o form reenviava todos os campos, e um vazio sobrescrevia | edit **diff-based**: só envia o que mudou |
+| 5 | Dashboard mostrava "2/3" com 1 conexão | contava **SAs** (failover = 2 SAs up; rekey = 3 transitório) | agrupar por nome de conexão → "1/1" + `active_paths` |
+| 6 | `test-failover` não chaveava | agent bloqueava OUTPUT → o `sendmsg` do DPD dá **EPERM** (erro local), o charon só retransmite e nunca declara peer morto | bloquear **só INBOUND** (o probe sai e não recebe resposta) |
+| 7 | Detecção de peer morto ~2min | `dpd_delay=30s` + retransmit padrão do charon | `dpd_delay=10s` + `retransmit_timeout=2.0/base=1.6/tries=4` no `strongswan.conf` (em `install.sh`) → ~30-42s |
+| 8 | `test-failover` bloqueava o endpoint **ocioso** | com 2 SAs up, o ativo é o **último SA instalado** — nem `prefer_backup` nem `list-sas` refletem | novo `/active-remote` lê a política XFRM de saída |
+
+## 10. Lado do cliente (FortiGate) — setup e gotchas
+
+O cliente é um **FortiGate (FortiOS 7.4)** com 2 WANs, usando **SD-WAN** pra active/standby. Gotchas resolvidos (a config real do backup `MACPOAFW01` virou o template do export — §11):
+
+- **NAT-T**: o FortiGate tinha `set nattraversal disable` no phase1 primário. Como **nós** estamos atrás de NAT, NAT-T é obrigatório → o INIT fechava mas o `IKE_AUTH` na 4500 não respondia. Fix: `set nattraversal enable` (é o default; só aparece quando desligado).
+- **Source do Performance SLA**: o probe do SLA nascia da interface de túnel (`192.168.1.2`) / WAN — **fora** da subnet protegida `192.168.128.0/22` → nosso lado dropa na decriptação. Fix: `config system sdwan / config health-check / set source <IP do Forti dentro de 192.168.128.0/22>`.
+- **NAT no tráfego transit**: hosts do cliente não alcançavam o `10.10.x` porque o tráfego saía pela **internet (ppp2) com SNAT** (rota em cache, não a policy de VPN). A rota já estava certa (`via sdwan-zone`); o conserto foi **`diagnose sys session clear`** (a sessão em cache estava grudada no caminho velho). A policy de VPN **não** aplica NAT (site-to-site preserva o IP real).
+- **ECMP / roteamento**: rotas equal-cost pros 2 túneis causam **roteamento assimétrico**. Usar SD-WAN (zone + rule + SLA) + rota via `sdwan-zone` (+ rota blackhole distância 254 como safety), **sem** rotas equal-cost.
+- **localid**: o FortiGate apresenta o IP da WAN como IKE id — cobrir no secret (§9 bug 2).
+- **IPs mudam**: o homolog troca de IP público no reboot, e a WAN do cliente também mudou (`189.112.40.121` → `201.48.143.18`). Ajustar `left_id`/`right_ip` no painel + `remote-gw`/`localid` no FortiGate. (Opção FQDN/DDNS recusada — fica IP fixo, reajusta quando muda.)
+
+## 11. Config view + export para o peer
+
+- **Ver config gerada** (ícone 👁 por conexão) → `GET /connections/{id}/config`: mostra o `connections{}`/`secrets{}` swanctl que aquela conexão gera (PSK oculto).
+- **Baixar config** (menu `⋮ → Baixar config`) → `GET /connections/{id}/export?target=fortigate|generic`:
+  - **fortigate**: script de CLI pronto pra colar (address, phase1/phase2, SD-WAN zone/members/SLA/rule, rota+blackhole, policy), **com o PSK real** e todos os gotchas da §10 embutidos. Objetos com prefixo `EG_` (aditivo/idempotente) + bloco de UNDO. Campos do FortiGate (WAN pri/bak, interface LAN, source do SLA, versão FortiOS, Local IDs) vêm de um mini-form; preview ao vivo.
+  - **generic**: folha de parâmetros device-agnóstica (nosso lado, lado do cliente, Fase 1/2, DPD) pra pfSense/Endian/Mikrotik/etc.
+- **UI**: header enxuto (só "Adicionar Conexão"; "Aplicar" removido pois aplica automático; "Reiniciar StrongSwan" foi pra barra de status). Ações da linha colapsadas num **dropdown `⋮`** (`components/ui/dropdown-menu.tsx`), deixando só o toggle start/stop inline. **Excluir** exige digitar o nome do túnel (type-to-confirm).
+
+## 12. Validação, decisão e estado atual
+
+**Failover validado ao vivo (2026-07-22):**
+- **Botão Testar failover**: bloqueou o endpoint ativo, DPD detectou, chaveou pro backup em **~42s**, e o auto-restore (120s) limpou o bloqueio e voltou os dois túneis.
+- **Switch manual / Rollback**: virada instantânea pro backup / volta pro primário.
+- **Queda real pelo FortiGate**: o usuário fez `set status down` na **interface de túnel** primária (`to-tst01`) — sem tocar na WAN física, mantendo a gerência. Monitorado do EG: a saída foi **toda pelo backup** durante a queda e **voltou pro primário ~5s após** o `set status up`. Como o admin-down manda um DELETE limpo, o chaveamento foi **imediato** (sem esperar DPD); o DPD ~30-42s só vale pra falha silenciosa/dura.
+
+**Decisão de arquitetura (2026-07-22): opção "A" — single-connection active/standby.** Uma conexão, `remote_addrs = [primário, backup]`, os 2 SAs up em paralelo, uma rota de saída. Cobre a necessidade real (failover por queda). O **split em dois túneis route-based/VTI** (que habilitaria SLA por-membro verde-enquanto-ocioso, failover por latência e load-balance) fica **arquivado** — só reabre se o requisito virar "trocar por qualidade, não só por queda". Trade-off aceito: o membro backup aparece down-enquanto-ocioso no dashboard do FortiGate (acende sozinho no failover real).
+
+**Estado atual**: branch `feature/ipsec-failover` completa, commitada e no origin (`452b254` → `29fa919` → `eddee80`). Homolog rodando essa versão, túnel real `to-macro01` com os 2 endpoints UP. Deploy no homolog foi **manual** (scp + rebuild + restart do agent).
+
+**Para o release (~v1.6.0), quando o usuário der o ok**: só falta atualizar o handoff doc (`docs/handoff/`) → merge de `feature/ipsec-failover` na `main` → release. Não lançar sem o ok do usuário.
