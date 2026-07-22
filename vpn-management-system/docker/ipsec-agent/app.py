@@ -235,9 +235,19 @@ def _valid_ip(ip):
         return False
 
 
-def _peer_iptables(action, ip):
-    """action 'I' (insert/block) or 'D' (delete/unblock) — both directions."""
-    for chain, flag in (('OUTPUT', '-d'), ('INPUT', '-s')):
+_BOTH_CHAINS = (('OUTPUT', '-d'), ('INPUT', '-s'))
+_INBOUND_ONLY = (('INPUT', '-s'),)
+
+
+def _peer_iptables(action, ip, chains=_BOTH_CHAINS):
+    """action 'I' (insert/block) or 'D' (delete/unblock).
+
+    Default blocks both directions. For a DPD-driven failover *test* pass
+    `chains=_INBOUND_ONLY`: an OUTPUT DROP makes charon's own DPD probe fail to send
+    with EPERM ("Operation not permitted"), which charon treats as a transient local
+    error and never counts as dead-peer — so it never fails over. Blocking only INBOUND
+    lets the DPD probe go out and simply get no reply, which is what trips DPD."""
+    for chain, flag in chains:
         subprocess.run(['iptables', f'-{action}', chain, flag, ip, '-j', 'DROP'],
                        capture_output=True, text=True, timeout=10)
 
@@ -274,17 +284,48 @@ def test_failover_block(ip):
     if not _valid_ip(ip):
         return jsonify({'success': False, 'error': 'invalid ip'}), 400
     restore = int(os.environ.get('FAILOVER_TEST_RESTORE_SECONDS', '120'))
-    _peer_iptables('I', ip)
-    logger.info("Failover test: blocked %s, auto-restore in %ds", ip, restore)
+    # INBOUND-only: block the peer's replies so charon's DPD probe goes out, gets no
+    # answer, and trips dead-peer detection -> failover. (An OUTPUT DROP would make the
+    # probe fail to send with EPERM, which never counts as dead-peer.)
+    _peer_iptables('I', ip, chains=_INBOUND_ONLY)
+    logger.info("Failover test: blocked inbound from %s, auto-restore in %ds", ip, restore)
 
     def _restore():
         time.sleep(restore)
         for _ in range(4):
-            _peer_iptables('D', ip)
+            _peer_iptables('D', ip, chains=_INBOUND_ONLY)
         logger.info("Failover test: auto-unblocked %s", ip)
 
     threading.Thread(target=_restore, daemon=True).start()
     return jsonify({'success': True, 'blocked': ip, 'auto_restore_seconds': restore})
+
+
+@app.route('/active-remote', methods=['POST'])
+def active_remote():
+    """Report the remote endpoint currently carrying OUTBOUND traffic, read from the
+    kernel XFRM policy (`dir out` -> `tmpl ... dst <ip>`). With two overlapping failover
+    SAs (same reqid/TS) the outbound policy points at the last-installed SA — this is the
+    ONLY reliable signal of which path is active; swanctl list-sas can't disambiguate and
+    prefer_backup only affects initiate order, not the installed policy."""
+    if not check_auth():
+        return jsonify({'error': 'Unauthorized'}), 401
+    try:
+        out = subprocess.run(['ip', 'xfrm', 'policy'],
+                             capture_output=True, text=True, timeout=10).stdout
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'success': False, 'error': str(e)}), 500
+    remotes, in_out = [], False
+    for ln in out.splitlines():
+        s = ln.strip()
+        if s.startswith('dir out'):
+            in_out = True
+        elif s.startswith('dir '):
+            in_out = False
+        elif in_out and s.startswith('tmpl ') and ' dst ' in s:
+            parts = s.split()
+            remotes.append(parts[parts.index('dst') + 1])
+    return jsonify({'success': True, 'active': remotes[0] if remotes else None,
+                    'all': remotes})
 
 
 if __name__ == '__main__':

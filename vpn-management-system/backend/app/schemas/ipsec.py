@@ -56,6 +56,7 @@ class IPsecConnectionCreate(IPsecConnectionBase):
     @field_validator("left_ip", "right_ip")
     @classmethod
     def validate_ip(cls, v):
+        v = v.strip() if isinstance(v, str) else v  # tolerate pasted leading/trailing spaces
         try:
             ipaddress.ip_address(v)
         except ValueError:
@@ -79,6 +80,7 @@ class IPsecConnectionCreate(IPsecConnectionBase):
     @field_validator("left_id", "right_id")
     @classmethod
     def validate_id(cls, v):
+        v = v.strip() if isinstance(v, str) else v  # tolerate pasted spaces
         # Empty is allowed — the config generator falls back to the peer IP.
         if not v:
             return v
@@ -96,6 +98,7 @@ class IPsecConnectionCreate(IPsecConnectionBase):
     @field_validator("right_ip_backup")
     @classmethod
     def validate_backup_ip(cls, v):
+        v = v.strip() if isinstance(v, str) else v  # tolerate pasted spaces
         if not v:
             return v
         try:
@@ -158,11 +161,31 @@ class IPsecConnectionUpdate(BaseModel):
     def validate_ip(cls, v):
         if v is None:
             return v
+        v = v.strip()  # tolerate pasted leading/trailing spaces
         try:
             ipaddress.ip_address(v)
         except ValueError:
             raise ValueError(f"Invalid IP address: {v}")
         return v
+
+    @field_validator("right_ip_backup")
+    @classmethod
+    def validate_backup_ip(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if v == "":
+            return v  # empty clears the backup
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError(f"Invalid backup IP address: {v}")
+        return v
+
+    @field_validator("left_id", "right_id")
+    @classmethod
+    def strip_id(cls, v):
+        return v.strip() if isinstance(v, str) else v
 
     @field_validator("left_subnet", "right_subnet")
     @classmethod

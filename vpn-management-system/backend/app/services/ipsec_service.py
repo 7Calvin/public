@@ -462,7 +462,13 @@ class IPsecService:
             return False, str(e)
 
     async def _active_remote(self, name: str) -> Optional[str]:
-        """The remote endpoint the tunnel is currently established on, or None."""
+        """The remote endpoint currently carrying OUTBOUND traffic. Reads the kernel XFRM
+        policy via the agent — with two overlapping failover SAs the outbound policy (the
+        last SA installed) is the only reliable signal; swanctl list-sas / prefer_backup
+        can't tell which path actually carries traffic. Falls back to list-sas remote_host."""
+        ok, data = await self._agent_post("/active-remote")
+        if ok and isinstance(data, dict) and data.get("active"):
+            return data["active"]
         st = await self.get_status(name)
         for c in st.get("connections", []):
             if c.get("name") == name:
@@ -511,6 +517,10 @@ class IPsecService:
         if not backup:
             return {"success": False, "error": "No backup IP set — nothing to fail over to"}
         primary = conn.right_ip
+        # Block whichever endpoint actually carries outbound traffic (read from the XFRM
+        # policy via the agent). With both failover SAs up the active path = last SA
+        # installed, which neither prefer_backup nor list-sas reliably reflects — so ask
+        # the kernel, else the test may block the idle path and nothing fails over.
         active = await self._active_remote(name) or primary
         other = backup if active == primary else primary
         ok, out = await self._agent_post(f"/test-failover-block/{active}")
@@ -520,8 +530,8 @@ class IPsecService:
             "success": True,
             "blocking": active,
             "expected_failover_to": other,
-            "message": f"Blocked {active}; the tunnel should fail over to {other} within ~90s "
-                       f"(auto-restored after). Watch the status.",
+            "message": f"Blocked {active}; the tunnel should fail over to {other} within "
+                       f"~30-60s (auto-restored after). Watch the status.",
         }
 
     async def reload_all(self) -> Tuple[bool, str]:

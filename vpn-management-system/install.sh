@@ -368,6 +368,20 @@ install_strongswan() {
         apt-get install -y -qq strongswan strongswan-swanctl strongswan-pki libcharon-extra-plugins || \
         log_warn "Could not install swanctl packages (IPsec features may be unavailable)"
 
+    # Tighten IKE retransmit timing so a dead peer is detected in ~30s (for IPsec
+    # HA/failover) instead of the stock ~2min. Paired with per-connection dpd_delay=10s
+    # in the generated swanctl config. Idempotent; the restart below picks it up.
+    if [ -f /etc/strongswan.conf ] && ! grep -q "retransmit_tries" /etc/strongswan.conf; then
+        python3 - <<'PYEOF' 2>/dev/null || true
+p = "/etc/strongswan.conf"
+s = open(p).read()
+if "charon {" in s and "retransmit_tries" not in s:
+    s = s.replace("charon {\n",
+                  "charon {\n\tretransmit_timeout = 2.0\n\tretransmit_base = 1.6\n\tretransmit_tries = 4\n", 1)
+    open(p, "w").write(s)
+PYEOF
+    fi
+
     # Use the swanctl daemon (strongswan.service) and MASK the legacy starter so it can
     # never auto-start (the `ipsec` CLI would otherwise revive it and it fights swanctl
     # for the vici socket). Kill any orphan legacy charon holding UDP 500/4500 first.

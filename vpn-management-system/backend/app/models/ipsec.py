@@ -271,7 +271,9 @@ class IPsecConnection(Base):
             f"        remote_addrs = {self._remote_addrs()}",
             f"        proposals = {self.ike_cipher}",
             f"        rekey_time = {self.ike_lifetime}",
-            f"        dpd_delay = 30s",
+            # Short DPD so a dead primary is detected fast (HA/failover). Paired with the
+            # tightened charon retransmit settings, dead-peer detection is ~tens of secs.
+            f"        dpd_delay = 10s",
             f"        local {{",
             f"            auth = {self.auth_method}",
             f"            id = {self.left_id}",
