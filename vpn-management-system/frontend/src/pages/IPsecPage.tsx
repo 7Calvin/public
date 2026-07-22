@@ -29,6 +29,9 @@ import {
   Pencil,
   FileText,
   Terminal,
+  Zap,
+  Undo2,
+  ArrowLeftRight,
 } from 'lucide-react'
 import type { IPsecConnection, IPsecStatus, IPsecConnectionCreate } from '@/types'
 
@@ -39,6 +42,7 @@ interface ConnectionForm {
   left_subnet: string
   left_id: string
   right_ip: string
+  right_ip_backup: string
   right_subnet: string
   right_id: string
   auth_method: string
@@ -93,6 +97,7 @@ const createInitialForm = (serverInfo?: ServerInfo): ConnectionForm => ({
   left_subnet: serverInfo?.local_subnet || '',
   left_id: serverInfo?.public_ip || '',
   right_ip: '',
+  right_ip_backup: '',
   right_subnet: '',
   right_id: '',
   auth_method: 'psk',
@@ -265,6 +270,44 @@ export default function IPsecPage() {
     },
   })
 
+  const testFailoverMutation = useMutation({
+    mutationFn: (id: string) => ipsecApi.testFailover(id),
+    onSuccess: (res: any) => {
+      toast({
+        title: 'Teste de failover iniciado',
+        description: res?.data?.message || 'Bloqueando o caminho ativo; acompanhe o status (auto-restaura).',
+      })
+      queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Falha no teste de failover', description: error?.response?.data?.detail })
+    },
+  })
+
+  const switchBackupMutation = useMutation({
+    mutationFn: (id: string) => ipsecApi.switchBackup(id),
+    onSuccess: (res: any) => {
+      toast({ title: 'Switch para backup', description: res?.data?.message })
+      queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
+      queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Falha ao trocar para backup', description: error?.response?.data?.detail })
+    },
+  })
+
+  const rollbackMutation = useMutation({
+    mutationFn: (id: string) => ipsecApi.rollbackPrimary(id),
+    onSuccess: (res: any) => {
+      toast({ title: 'Rollback para primário', description: res?.data?.message })
+      queryClient.invalidateQueries({ queryKey: ['ipsec-connections'] })
+      queryClient.invalidateQueries({ queryKey: ['ipsec-status'] })
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Falha no rollback', description: error?.response?.data?.detail })
+    },
+  })
+
   const [confirmRestartSS, setConfirmRestartSS] = useState(false)
   const restartSSMutation = useMutation({
     mutationFn: () => ipsecApi.restartStrongSwan(),
@@ -365,6 +408,7 @@ export default function IPsecPage() {
       left_subnet: formData.left_subnet,
       left_id: formData.left_id,
       right_ip: formData.right_ip,
+      right_ip_backup: formData.right_ip_backup,
       right_subnet: formData.right_subnet,
       right_id: formData.right_id,
       auth_method: formData.auth_method,
@@ -401,6 +445,7 @@ export default function IPsecPage() {
       left_subnet: conn.left_subnet,
       left_id: conn.left_id,
       right_ip: conn.right_ip,
+      right_ip_backup: conn.right_ip_backup || '',
       right_subnet: conn.right_subnet,
       right_id: conn.right_id,
       auth_method: conn.auth_method || 'psk',
@@ -569,7 +614,14 @@ export default function IPsecPage() {
                       <tr key={conn.id} className="border-b hover:bg-muted/50">
                         <td className="px-4 py-3">
                           <div>
-                            <p className="font-medium">{conn.name}</p>
+                            <p className="font-medium">
+                              {conn.name}
+                              {conn.prefer_backup && conn.right_ip_backup && (
+                                <span className="ml-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 align-middle">
+                                  <ArrowLeftRight className="h-3 w-3" /> BACKUP
+                                </span>
+                              )}
+                            </p>
                             {conn.description && (
                               <p className="text-xs text-muted-foreground">{conn.description}</p>
                             )}
@@ -577,7 +629,14 @@ export default function IPsecPage() {
                         </td>
                         <td className="px-4 py-3 font-mono text-xs">
                           <div>
-                            <p>{conn.right_ip}</p>
+                            <p className={!conn.prefer_backup && conn.right_ip_backup ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : ''}>
+                              {conn.right_ip}{!conn.prefer_backup && conn.right_ip_backup ? ' ✓' : ''}
+                            </p>
+                            {conn.right_ip_backup && (
+                              <p className={conn.prefer_backup ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-muted-foreground'}>
+                                backup: {conn.right_ip_backup}{conn.prefer_backup ? ' ✓' : ''}
+                              </p>
+                            )}
                             <p className="text-muted-foreground">ID: {conn.right_id}</p>
                           </div>
                         </td>
@@ -707,6 +766,40 @@ export default function IPsecPage() {
                                 <Play className="h-4 w-4" />
                               </Button>
                             )}
+                            {conn.right_ip_backup && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => testFailoverMutation.mutate(conn.id)}
+                                  disabled={testFailoverMutation.isPending}
+                                  title="Testar failover (bloqueia o caminho ativo e verifica a volta pelo backup; auto-restaura)"
+                                >
+                                  <Zap className="h-4 w-4" />
+                                </Button>
+                                {conn.prefer_backup ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => rollbackMutation.mutate(conn.id)}
+                                    disabled={rollbackMutation.isPending}
+                                    title="Rollback: voltar a preferir o IP primário"
+                                  >
+                                    <Undo2 className="h-4 w-4" />
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => switchBackupMutation.mutate(conn.id)}
+                                    disabled={switchBackupMutation.isPending}
+                                    title="Switch manual: preferir o IP de backup"
+                                  >
+                                    <ArrowLeftRight className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </>
+                            )}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -818,6 +911,16 @@ export default function IPsecPage() {
                       placeholder="187.92.78.242"
                     />
                     <p className="text-xs text-muted-foreground">IP público do peer remoto</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="add-right_ip_backup">IP de Backup (failover)</Label>
+                    <Input
+                      id="add-right_ip_backup"
+                      value={formData.right_ip_backup}
+                      onChange={(e) => updateField('right_ip_backup', e.target.value)}
+                      placeholder="(opcional) 2º IP do peer"
+                    />
+                    <p className="text-xs text-muted-foreground">2º IP fixo do peer p/ failover (HA)</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="add-right_subnet">Sub-rede(s) Remota(s) *</Label>
@@ -1061,6 +1164,16 @@ export default function IPsecPage() {
                       placeholder="187.92.78.242"
                     />
                     <p className="text-xs text-muted-foreground">IP público do peer remoto</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-right_ip_backup">IP de Backup (failover)</Label>
+                    <Input
+                      id="edit-right_ip_backup"
+                      value={formData.right_ip_backup}
+                      onChange={(e) => updateField('right_ip_backup', e.target.value)}
+                      placeholder="(opcional) 2º IP do peer"
+                    />
+                    <p className="text-xs text-muted-foreground">2º IP fixo do peer p/ failover (HA)</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-right_subnet">Sub-rede(s) Remota(s) *</Label>

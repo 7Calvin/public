@@ -31,8 +31,9 @@ class IPsecConnectionCreate(IPsecConnectionBase):
 
     # Remote (Right) - Peer
     right_ip: str = Field(..., description="Public IP of remote peer")
+    right_ip_backup: Optional[str] = Field(None, description="2nd peer IP for HA/failover (remote_addrs)")
     right_subnet: str = Field(..., description="Remote network CIDR")
-    right_id: str = Field(..., description="ID of remote peer")
+    right_id: str = Field(default="", description="ID of remote peer (defaults to right_ip if empty)")
 
     # Authentication
     auth_method: str = Field(default="psk", pattern=r'^(psk|pubkey)$')
@@ -78,6 +79,9 @@ class IPsecConnectionCreate(IPsecConnectionBase):
     @field_validator("left_id", "right_id")
     @classmethod
     def validate_id(cls, v):
+        # Empty is allowed — the config generator falls back to the peer IP.
+        if not v:
+            return v
         # ID can be IP address or FQDN
         try:
             ipaddress.ip_address(v)
@@ -87,6 +91,17 @@ class IPsecConnectionCreate(IPsecConnectionBase):
         # Check if valid FQDN pattern
         if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9]$', v):
             raise ValueError(f"Invalid ID (must be IP or FQDN): {v}")
+        return v
+
+    @field_validator("right_ip_backup")
+    @classmethod
+    def validate_backup_ip(cls, v):
+        if not v:
+            return v
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError(f"Invalid backup IP address: {v}")
         return v
 
     @field_validator("ike_cipher", "esp_cipher")
@@ -116,6 +131,7 @@ class IPsecConnectionUpdate(BaseModel):
 
     # Remote (Right)
     right_ip: Optional[str] = None
+    right_ip_backup: Optional[str] = None
     right_subnet: Optional[str] = None
     right_id: Optional[str] = None
 
@@ -178,6 +194,8 @@ class IPsecConnectionResponse(BaseModel):
 
     # Remote (Right)
     right_ip: str
+    right_ip_backup: Optional[str] = None
+    prefer_backup: bool = False
     right_subnet: str
     right_id: str
 
@@ -221,6 +239,8 @@ class IPsecConnectionListResponse(BaseModel):
     left_subnet: str
     left_id: str
     right_ip: str
+    right_ip_backup: Optional[str] = None
+    prefer_backup: bool = False
     right_subnet: str
     right_id: str
     # Crypto settings — included so the edit form pre-fills with the saved values

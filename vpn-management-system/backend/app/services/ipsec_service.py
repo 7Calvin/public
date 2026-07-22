@@ -99,8 +99,9 @@ class IPsecService:
             left_subnet=data.left_subnet,
             left_id=data.left_id,
             right_ip=data.right_ip,
+            right_ip_backup=data.right_ip_backup,
             right_subnet=data.right_subnet,
-            right_id=data.right_id,
+            right_id=data.right_id or data.right_ip,  # default the peer ID to its IP
             auth_method=data.auth_method,
             psk=data.psk,
             ike_version=data.ike_version,
@@ -444,6 +445,84 @@ class IPsecService:
 
         # Then start
         return await self.start_connection(name)
+
+    # ==================== HA / Failover controls ====================
+
+    async def _agent_post(self, path: str, timeout: float = 20.0) -> Tuple[bool, Any]:
+        """POST to the ipsec-agent (no body)."""
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                r = await client.post(
+                    f"{self.agent_url}{path}",
+                    headers={"Authorization": f"Bearer {self.agent_token}"},
+                )
+                ct = r.headers.get("content-type", "")
+                return r.status_code == 200, (r.json() if ct.startswith("application/json") else r.text)
+        except Exception as e:  # noqa: BLE001
+            return False, str(e)
+
+    async def _active_remote(self, name: str) -> Optional[str]:
+        """The remote endpoint the tunnel is currently established on, or None."""
+        st = await self.get_status(name)
+        for c in st.get("connections", []):
+            if c.get("name") == name:
+                return c.get("remote_host")
+        return None
+
+    async def set_prefer_backup(self, name: str, prefer: bool) -> Tuple[bool, str]:
+        """Manual failover switch: prefer the backup endpoint (True) or the primary
+        (False). Reorders remote_addrs, reloads, and restarts the tunnel so it
+        re-initiates on the chosen endpoint. Both paths stay available (no blocking)."""
+        conn = await self.get_connection_by_name(name)
+        if not conn:
+            return False, f"Connection '{name}' not found"
+        backup = (conn.right_ip_backup or "").strip()
+        if not backup:
+            return False, "No backup IP configured on this connection"
+        primary = conn.right_ip
+        target = backup if prefer else primary
+        conn.prefer_backup = prefer
+        await self.db.commit()
+
+        # Reorder remote_addrs (matters when WE initiate).
+        ok, err = await self.apply_config()
+        if not ok:
+            return False, f"Config apply failed: {err}"
+
+        # The peer (e.g. a FortiGate with a conn per IP) usually initiates from the
+        # PRIMARY and wins the race, so a reorder alone won't force the backup. Block
+        # the primary path to force the tunnel onto the backup; unblock to return.
+        if prefer:
+            await self._agent_post(f"/block-peer/{primary}")
+        else:
+            await self._agent_post(f"/unblock-peer/{primary}")
+
+        await self.restart_connection(name)  # re-initiate on the now-forced endpoint
+        return True, f"Now preferring {'backup' if prefer else 'primary'} ({target})"
+
+    async def test_failover(self, name: str) -> Dict[str, Any]:
+        """Simulate a path failure: block the active remote endpoint on the host so DPD
+        trips and the tunnel fails over to the other IP; the agent auto-unblocks after a
+        delay. Returns immediately — poll /status to watch the failover live."""
+        conn = await self.get_connection_by_name(name)
+        if not conn:
+            return {"success": False, "error": "Connection not found"}
+        backup = (conn.right_ip_backup or "").strip()
+        if not backup:
+            return {"success": False, "error": "No backup IP set — nothing to fail over to"}
+        primary = conn.right_ip
+        active = await self._active_remote(name) or primary
+        other = backup if active == primary else primary
+        ok, out = await self._agent_post(f"/test-failover-block/{active}")
+        if not ok:
+            return {"success": False, "error": f"Could not start test: {out}"}
+        return {
+            "success": True,
+            "blocking": active,
+            "expected_failover_to": other,
+            "message": f"Blocked {active}; the tunnel should fail over to {other} within ~90s "
+                       f"(auto-restored after). Watch the status.",
+        }
 
     async def reload_all(self) -> Tuple[bool, str]:
         """Reload StrongSwan configuration"""

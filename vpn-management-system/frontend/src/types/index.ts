@@ -218,6 +218,7 @@ export interface IPsecConnection {
   left_subnet: string
   left_id: string
   right_ip: string
+  right_ip_backup?: string
   right_subnet: string
   right_id: string
   auth_method: 'psk' | 'pubkey'
@@ -227,6 +228,7 @@ export interface IPsecConnection {
   esp_cipher: string
   key_lifetime: string
   auto_start: boolean
+  prefer_backup?: boolean
   dpd_action: 'restart' | 'clear' | 'hold' | 'none'
   status: 'active' | 'inactive' | 'connecting' | 'error'
   is_enabled: boolean
@@ -243,6 +245,7 @@ export interface IPsecConnectionCreate {
   left_subnet: string
   left_id: string
   right_ip: string
+  right_ip_backup?: string
   right_subnet: string
   right_id: string
   auth_method?: 'psk' | 'pubkey'

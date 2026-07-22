@@ -55,6 +55,7 @@ class IPsecConnection(Base):
 
     # Remote (Right) - Client/peer
     right_ip = Column(String(45), nullable=False)  # Public IP of peer
+    right_ip_backup = Column(String(45), nullable=True)  # 2nd peer IP for HA/failover (swanctl remote_addrs)
     right_subnet = Column(String(500), nullable=False)  # Remote network CIDR(s), comma-separated
     right_id = Column(String(100), nullable=False)  # Peer ID (usually same as right_ip)
 
@@ -76,6 +77,9 @@ class IPsecConnection(Base):
 
     # Control settings
     auto_start = Column(Boolean, default=True)  # auto=start vs auto=add
+    # HA/failover: prefer the backup endpoint (orders remote_addrs = [backup, primary]).
+    # A manual "switch to backup" sets this True; "rollback to primary" sets it False.
+    prefer_backup = Column(Boolean, default=False)
     dpd_action = Column(
         SQLEnum(DPDAction, name="dpd_action", values_callable=lambda x: [e.value for e in x]),
         default=DPDAction.RESTART
@@ -223,13 +227,16 @@ class IPsecConnection(Base):
         return self.right_id or self.right_ip
 
     def _remote_addrs(self) -> str:
-        """Comma-separated remote endpoints. A backup endpoint (HA/failover) is
-        appended here so swanctl tries both — native multi-homing failover."""
-        addrs = [self.right_ip]
-        backup = getattr(self, "right_ip_backup", None)
-        if backup and backup.strip() and backup.strip() != self.right_ip:
-            addrs.append(backup.strip())
-        return ", ".join(addrs)
+        """Comma-separated remote endpoints for swanctl `remote_addrs` (native
+        multi-homing failover). Order = which endpoint charon prefers on initiate:
+        primary first normally, backup first when `prefer_backup` (manual switch)."""
+        primary = self.right_ip
+        backup = (getattr(self, "right_ip_backup", None) or "").strip()
+        if backup and backup != primary:
+            if getattr(self, "prefer_backup", False):
+                return f"{backup}, {primary}"
+            return f"{primary}, {backup}"
+        return primary
 
     def to_swanctl(self) -> str:
         """Generate this connection's `<name> { ... }` entry for swanctl.conf's
@@ -271,7 +278,9 @@ class IPsecConnection(Base):
             f"        }}",
             f"        remote {{",
             f"            auth = {self.auth_method}",
-            f"            id = {self._remote_id()}",
+            # No `id` pin: with a failover backup the peer presents a different IP-id per
+            # path, so accept any id here. Security is remote_addrs (source IPs) + the PSK,
+            # which is keyed by both peer IPs in the secrets block.
             f"        }}",
             f"        children {{",
             "\n".join(children),
@@ -281,13 +290,40 @@ class IPsecConnection(Base):
 
     def to_swanctl_secret(self) -> str:
         """Generate this connection's `ike-<name> { ... }` entry for swanctl.conf's
-        `secrets {}` block."""
+        `secrets {}` block. Lists our id AND every possible peer id (explicit right_id,
+        the primary IP, and the backup IP) so the PSK is found regardless of which
+        endpoint the peer authenticates from — essential for the HA/failover backup.
+
+        Each bare IP is emitted in BOTH forms: address type (`1.2.3.4`) and string/FQDN
+        type (`@1.2.3.4`). Some peers (notably a FortiGate with a text "Local ID" set to
+        its WAN IP) send an IP-looking identity as an ID_FQDN/KEY_ID, not ID_IPV4_ADDR;
+        an address-typed owner won't match it -> "no shared key found" and AUTH fails.
+        Emitting both keeps the secret keyed (safe with multiple connections) while
+        matching whichever id type the peer presents."""
         if self.auth_method == "psk" and self.psk:
-            return "\n".join([
-                f"    ike-{self.name} {{",
-                f"        id-1 = {self.left_id}",
-                f"        id-2 = {self._remote_id()}",
-                f'        secret = "{self.psk}"',
-                f"    }}",
-            ])
+            import ipaddress
+            ids: list[str] = []
+
+            def add(v: str) -> None:
+                if v and v not in ids:
+                    ids.append(v)
+
+            for cand in (self.left_id, self.right_id, self.right_ip,
+                         getattr(self, "right_ip_backup", None)):
+                c = (cand or "").strip()
+                if not c:
+                    continue
+                add(c)
+                if not c.startswith("@"):
+                    try:
+                        ipaddress.ip_address(c)
+                        add(f"@{c}")  # same IP, but as a string identity
+                    except ValueError:
+                        pass
+            lines = [f"    ike-{self.name} {{"]
+            for i, rid in enumerate(ids, 1):
+                lines.append(f"        id-{i} = {rid}")
+            lines.append(f'        secret = "{self.psk}"')
+            lines.append("    }")
+            return "\n".join(lines)
         return ""

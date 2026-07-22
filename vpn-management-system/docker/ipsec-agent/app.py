@@ -10,6 +10,9 @@ unchanged; only the implementation underneath switched to swanctl.
 """
 import os
 import glob
+import time
+import ipaddress
+import threading
 import subprocess
 import logging
 from flask import Flask, jsonify, request
@@ -222,6 +225,66 @@ def get_logs():
         return jsonify({'success': False, 'logs': 'Timeout reading logs', 'source': None})
     except Exception as e:  # noqa: BLE001
         return jsonify({'success': False, 'logs': str(e), 'source': None})
+
+
+def _valid_ip(ip):
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+
+def _peer_iptables(action, ip):
+    """action 'I' (insert/block) or 'D' (delete/unblock) — both directions."""
+    for chain, flag in (('OUTPUT', '-d'), ('INPUT', '-s')):
+        subprocess.run(['iptables', f'-{action}', chain, flag, ip, '-j', 'DROP'],
+                       capture_output=True, text=True, timeout=10)
+
+
+@app.route('/block-peer/<ip>', methods=['POST'])
+def block_peer(ip):
+    if not check_auth():
+        return jsonify({'error': 'Unauthorized'}), 401
+    if not _valid_ip(ip):
+        return jsonify({'success': False, 'error': 'invalid ip'}), 400
+    _peer_iptables('I', ip)
+    logger.info("Blocked peer %s", ip)
+    return jsonify({'success': True, 'blocked': ip})
+
+
+@app.route('/unblock-peer/<ip>', methods=['POST'])
+def unblock_peer(ip):
+    if not check_auth():
+        return jsonify({'error': 'Unauthorized'}), 401
+    if not _valid_ip(ip):
+        return jsonify({'success': False, 'error': 'invalid ip'}), 400
+    for _ in range(4):  # clear any duplicate rules
+        _peer_iptables('D', ip)
+    logger.info("Unblocked peer %s", ip)
+    return jsonify({'success': True, 'unblocked': ip})
+
+
+@app.route('/test-failover-block/<ip>', methods=['POST'])
+def test_failover_block(ip):
+    """Block a peer IP to trip a failover, then AUTO-UNBLOCK after a delay so the test
+    can never leave a path blocked. Returns immediately."""
+    if not check_auth():
+        return jsonify({'error': 'Unauthorized'}), 401
+    if not _valid_ip(ip):
+        return jsonify({'success': False, 'error': 'invalid ip'}), 400
+    restore = int(os.environ.get('FAILOVER_TEST_RESTORE_SECONDS', '120'))
+    _peer_iptables('I', ip)
+    logger.info("Failover test: blocked %s, auto-restore in %ds", ip, restore)
+
+    def _restore():
+        time.sleep(restore)
+        for _ in range(4):
+            _peer_iptables('D', ip)
+        logger.info("Failover test: auto-unblocked %s", ip)
+
+    threading.Thread(target=_restore, daemon=True).start()
+    return jsonify({'success': True, 'blocked': ip, 'auto_restore_seconds': restore})
 
 
 if __name__ == '__main__':

@@ -509,6 +509,7 @@ export const ipsecApi = {
     left_subnet: string
     left_id: string
     right_ip: string
+    right_ip_backup?: string
     right_subnet: string
     right_id: string
     auth_method?: string
@@ -530,6 +531,7 @@ export const ipsecApi = {
     left_subnet: string
     left_id: string
     right_ip: string
+    right_ip_backup?: string
     right_subnet: string
     right_id: string
     auth_method: string
@@ -552,6 +554,11 @@ export const ipsecApi = {
   stop: (id: string) => api.post(`/ipsec/connections/${id}/stop`),
 
   restart: (id: string) => api.post(`/ipsec/connections/${id}/restart`),
+
+  // HA / failover controls
+  switchBackup: (id: string) => api.post(`/ipsec/connections/${id}/switch-backup`),
+  rollbackPrimary: (id: string) => api.post(`/ipsec/connections/${id}/rollback-primary`),
+  testFailover: (id: string) => api.post(`/ipsec/connections/${id}/test-failover`),
 
   // Global status & control
   status: () => api.get('/ipsec/status'),

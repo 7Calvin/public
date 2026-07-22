@@ -169,7 +169,13 @@ async def update_ipsec_connection(
     if tunnel_was_active:
         await service.restart_connection(conn_name)
 
-    return updated_connection
+    # Re-fetch fresh: the awaits above (apply/gateway/restart) expire the ORM
+    # attributes, so serializing `updated_connection` directly would trigger a lazy
+    # refresh on a detached instance -> DetachedInstanceError -> 500 (even though the
+    # save + apply already succeeded). Returning a freshly-loaded, session-bound copy
+    # avoids the misleading error that makes the panel look like the edit failed.
+    fresh = await service.get_connection_by_id(connection_id)
+    return fresh or updated_connection
 
 
 @router.delete("/connections/{connection_id}", response_model=MessageResponse)
@@ -336,6 +342,62 @@ async def restart_ipsec_connection(
         )
 
     return MessageResponse(message=f"Connection '{connection.name}' restarted")
+
+
+# ==================== HA / Failover controls ====================
+
+@router.post("/connections/{connection_id}/switch-backup")
+async def switch_to_backup(
+    connection_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually switch the tunnel to prefer the BACKUP endpoint (admin only). Reorders
+    remote_addrs (backup first) and re-initiates — both paths stay available."""
+    service = IPsecService(db)
+    connection = await service.get_connection_by_id(connection_id)
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IPsec connection not found")
+    ok, msg = await service.set_prefer_backup(connection.name, True)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+    return {"success": True, "message": msg}
+
+
+@router.post("/connections/{connection_id}/rollback-primary")
+async def rollback_to_primary(
+    connection_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually switch the tunnel back to prefer the PRIMARY endpoint (admin only)."""
+    service = IPsecService(db)
+    connection = await service.get_connection_by_id(connection_id)
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IPsec connection not found")
+    ok, msg = await service.set_prefer_backup(connection.name, False)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+    return {"success": True, "message": msg}
+
+
+@router.post("/connections/{connection_id}/test-failover")
+async def test_failover(
+    connection_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Simulate a path failure to verify failover (admin only): blocks the active peer
+    endpoint so DPD trips and the tunnel fails over to the backup, then auto-restores.
+    Returns immediately — poll /status to watch it live."""
+    service = IPsecService(db)
+    connection = await service.get_connection_by_id(connection_id)
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IPsec connection not found")
+    result = await service.test_failover(connection.name)
+    if not result.get("success"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("error", "test failed"))
+    return result
 
 
 # ==================== Global Status & Control ====================
