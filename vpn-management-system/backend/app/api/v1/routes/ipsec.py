@@ -568,32 +568,59 @@ def _export_generic(c) -> str:
     )
 
 
-def _export_fortigate(c, fortios, wan_pri, wan_bak, lan_if, sla_src, lid_pri, lid_bak) -> str:
+def _fg_base(base: str, conn_name: str) -> str:
+    """Sanitize the FortiGate name base: letters/digits/hyphen only, <=12 chars (so
+    `<base>-01` fits the 15-char phase1-interface limit)."""
+    b = "".join(ch for ch in (base or "") if ch.isalnum() or ch == "-").strip("-")[:12]
+    if not b:
+        b = "".join(ch for ch in conn_name if ch.isalnum() or ch == "-").strip("-")[:12]
+    return b or "EGtun"
+
+
+def _export_fortigate(c, fortios, wan_pri, wan_bak, lan_if, sla_src, lid_pri, lid_bak,
+                      base, client_lan) -> str:
     prop_ike, dhgrp = _split_cipher(c.ike_cipher)
     prop_esp, _ = _split_cipher(c.esp_cipher)
-    n = c.name
-    # first subnet only for the FortiGate address object / phase2 (keep it simple)
+    # FortiGate object names (constraints: phase1 <= 15 chars, SLA must have NO hyphen)
+    b = _fg_base(base, c.name)
+    n1, n2 = f"{b}-01", f"{b}-02"
+    sla = "".join(ch for ch in b if ch.isalnum()) or "EGSLA"   # health-check: no hyphen
+    zone, net_addr, cli_addr = f"{b}-zone", f"{b}-net", f"{b}-cli"
+    rule, pol_out, pol_in = f"{b}-rule", f"{b}-pol-out", f"{b}-pol-in"
+
     lsub = c.left_subnet.split(",")[0].strip()
     rsub = c.right_subnet.split(",")[0].strip()
     net = ipaddress.ip_network(lsub, strict=False)
     lnet, lmask = str(net.network_address), str(net.netmask)
     rnet_o = ipaddress.ip_network(rsub, strict=False)
     rnet, rmask = str(rnet_o.network_address), str(rnet_o.netmask)
+
+    # Policy source = the client's LAN. Default to the client's protected subnet (an
+    # address object, tighter than "all"); "all" keeps the permissive behaviour.
+    cl = (client_lan or "").strip() or rsub
+    if cl.lower() == "all":
+        cli_src, cli_block = "all", ""
+    else:
+        cli_o = ipaddress.ip_network(cl, strict=False)
+        cli_src = cli_addr
+        cli_block = (f'    edit "{cli_addr}"\n'
+                     f'        set subnet {cli_o.network_address} {cli_o.netmask}\n'
+                     f'    next\n')
     psk = c.psk or "<PSK>"
     return f"""# ============================================================================
-#  EdgeGate → FortiGate  |  IPsec HA/Failover  |  conexão: {n}
-#  Alvo: FortiOS {fortios}   |   ⚠ REVISE antes de colar. Aditivo (prefixo EG_).
+#  EdgeGate → FortiGate  |  IPsec HA/Failover  |  conexão: {c.name}  (base: {b})
+#  Alvo: FortiOS {fortios}   |   ⚠ REVISE antes de colar. Aditivo. UNDO no rodapé.
 # ============================================================================
 
 config firewall address
-    edit "EG_net_{lnet}"
+    edit "{net_addr}"
         set allow-routing enable
         set subnet {lnet} {lmask}
     next
-end
+{cli_block}end
 
 config vpn ipsec phase1-interface
-    edit "EG_{n}-pri"
+    edit "{n1}"
         set interface "{wan_pri}"
         set ike-version 2
         set keylife 28800
@@ -605,7 +632,7 @@ config vpn ipsec phase1-interface
         set remote-gw {c.left_id}
         set psksecret {psk}
     next
-    edit "EG_{n}-bak"
+    edit "{n2}"
         set interface "{wan_bak}"
         set ike-version 2
         set keylife 28800
@@ -619,8 +646,8 @@ config vpn ipsec phase1-interface
     next
 end
 config vpn ipsec phase2-interface
-    edit "EG_{n}-pri"
-        set phase1name "EG_{n}-pri"
+    edit "{n1}"
+        set phase1name "{n1}"
         set proposal {prop_esp}
         set dhgrp {dhgrp}
         set auto-negotiate enable
@@ -628,8 +655,8 @@ config vpn ipsec phase2-interface
         set src-subnet {rnet} {rmask}
         set dst-subnet {lnet} {lmask}
     next
-    edit "EG_{n}-bak"
-        set phase1name "EG_{n}-bak"
+    edit "{n2}"
+        set phase1name "{n2}"
         set proposal {prop_esp}
         set dhgrp {dhgrp}
         set auto-negotiate enable
@@ -642,23 +669,23 @@ end
 config system sdwan
     set status enable
     config zone
-        edit "EG_zone_{n}"
+        edit "{zone}"
         next
     end
     config members
         edit 201
-            set interface "EG_{n}-pri"
-            set zone "EG_zone_{n}"
+            set interface "{n1}"
+            set zone "{zone}"
             set source {sla_src}
         next
         edit 202
-            set interface "EG_{n}-bak"
-            set zone "EG_zone_{n}"
+            set interface "{n2}"
+            set zone "{zone}"
             set source {sla_src}
         next
     end
     config health-check
-        edit "EG_sla_{n}"
+        edit "{sla}"
             set server "{c.left_ip}"
             set source {sla_src}
             set members 201 202
@@ -671,17 +698,17 @@ config system sdwan
     end
     config service
         edit 201
-            set name "EG_rule_{n}"
+            set name "{rule}"
             set mode sla
-            set dst "EG_net_{lnet}"
-            set src "all"
+            set dst "{net_addr}"
+            set src "{cli_src}"
             config sla
-                edit "EG_sla_{n}"
+                edit "{sla}"
                     set id 1
                 next
             end
             set priority-members 201 202
-            set priority-zone "EG_zone_{n}"
+            set priority-zone "{zone}"
         next
     end
 end
@@ -690,7 +717,7 @@ config router static
     edit 0
         set dst {lnet} {lmask}
         set distance 1
-        set sdwan-zone "EG_zone_{n}"
+        set sdwan-zone "{zone}"
     next
     edit 0
         set dst {lnet} {lmask}
@@ -701,33 +728,33 @@ end
 
 config firewall policy
     edit 0
-        set name "EG_pol_{n}_out"
+        set name "{pol_out}"
         set srcintf "{lan_if}"
-        set dstintf "EG_zone_{n}"
+        set dstintf "{zone}"
         set action accept
-        set srcaddr "all"
-        set dstaddr "EG_net_{lnet}"
+        set srcaddr "{cli_src}"
+        set dstaddr "{net_addr}"
         set schedule "always"
         set service "ALL"
     next
     edit 0
-        set name "EG_pol_{n}_in"
-        set srcintf "EG_zone_{n}"
+        set name "{pol_in}"
+        set srcintf "{zone}"
         set dstintf "{lan_if}"
         set action accept
-        set srcaddr "EG_net_{lnet}"
-        set dstaddr "all"
+        set srcaddr "{net_addr}"
+        set dstaddr "{cli_src}"
         set schedule "always"
         set service "ALL"
     next
 end
 
 # ── UNDO ─ cole para remover tudo acima ─────────────────────────────────────
-# firewall policy: delete EG_pol_{n}_out / EG_pol_{n}_in
-# router static: delete as rotas EG (dst {lnet}/{lmask})
-# system sdwan: service(del 201) → health-check(del EG_sla_{n}) → members(del 201 202) → zone(del EG_zone_{n})
-# vpn ipsec phase2/phase1-interface: delete EG_{n}-pri / EG_{n}-bak
-# firewall address: delete EG_net_{lnet}
+# firewall policy: delete {pol_out} / {pol_in}
+# router static: delete as rotas (dst {lnet}/{lmask})
+# system sdwan: service(del 201) -> health-check(del {sla}) -> members(del 201 202) -> zone(del {zone})
+# vpn ipsec phase2/phase1-interface: delete {n1} / {n2}
+# firewall address: delete {net_addr}{(' / ' + cli_addr) if cli_src != 'all' else ''}
 """
 
 
@@ -742,12 +769,16 @@ async def export_connection_config(
     sla_src: str = "<SLA_SRC>",
     localid_pri: str = "",
     localid_bak: str = "",
+    base: str = "",
+    client_lan: str = "",
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Render this connection's config for the peer device. target=fortigate -> a
     paste-into-CLI script (SD-WAN failover, with the REAL PSK); target=generic -> a
-    device-agnostic parameter sheet. FortiGate-specific bits come from the query."""
+    device-agnostic parameter sheet. FortiGate-specific bits come from the query;
+    `base` names the FortiGate objects (<=12 chars) and `client_lan` scopes the policy
+    source (a subnet -> an address object, or 'all')."""
     service = IPsecService(db)
     conn = await service.get_connection_by_id(connection_id)
     if not conn:
@@ -757,6 +788,7 @@ async def export_connection_config(
     return _export_fortigate(
         conn, fortios, wan_pri, wan_bak, lan_if, sla_src,
         (localid_pri or conn.right_ip), (localid_bak or (conn.right_ip_backup or "")),
+        base, client_lan,
     )
 
 

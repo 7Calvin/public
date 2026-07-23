@@ -134,6 +134,7 @@ export default function IPsecPage() {
   const [exportForm, setExportForm] = useState({
     target: 'fortigate', fortios: '7.4', wan_pri: '', wan_bak: '',
     lan_if: '', sla_src: '', localid_pri: '', localid_bak: '',
+    base: '', client_lan: '',
   })
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false)
@@ -170,6 +171,8 @@ export default function IPsecPage() {
       sla_src: exportForm.sla_src || '<SLA_SRC>',
       localid_pri: exportForm.localid_pri,
       localid_bak: exportForm.localid_bak,
+      base: exportForm.base,
+      client_lan: exportForm.client_lan || '',
     }).then((res) => res.data as string),
     enabled: !!exportConn,
   })
@@ -795,7 +798,14 @@ export default function IPsecPage() {
                                 <DropdownMenuItem onSelect={() => openLogsForConnection(conn.name)}>
                                   <FileText className="h-4 w-4" /> Ver logs
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => setExportConn(conn)}>
+                                <DropdownMenuItem onSelect={() => {
+                                  setExportForm((f) => ({
+                                    ...f,
+                                    base: (conn.name || '').replace(/[^A-Za-z0-9-]/g, '').replace(/^-+|-+$/g, '').slice(0, 12),
+                                    client_lan: conn.right_subnet || '',
+                                  }))
+                                  setExportConn(conn)
+                                }}>
                                   <Download className="h-4 w-4" /> Baixar config
                                 </DropdownMenuItem>
                                 {conn.status === 'active' && (
@@ -1446,7 +1456,29 @@ export default function IPsecPage() {
                     <div><Label>Local ID primário</Label><Input value={exportForm.localid_pri} onChange={(e) => setExportForm((f) => ({ ...f, localid_pri: e.target.value }))} placeholder={exportConn?.right_ip} /></div>
                     <div><Label>Local ID backup</Label><Input value={exportForm.localid_bak} onChange={(e) => setExportForm((f) => ({ ...f, localid_bak: e.target.value }))} placeholder={exportConn?.right_ip_backup || ''} /></div>
                   </div>
-                  <p className="text-xs text-muted-foreground">O source do SLA precisa ser um IP do Forti dentro da rede do cliente.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label>Nome base (FortiGate)</Label>
+                      <Input
+                        value={exportForm.base}
+                        maxLength={12}
+                        onChange={(e) => setExportForm((f) => ({ ...f, base: e.target.value.replace(/[^A-Za-z0-9-]/g, '') }))}
+                        placeholder="AWStoMAC"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        túnel {(exportForm.base || '...')}-01/-02 · SLA {exportForm.base.replace(/[^A-Za-z0-9]/g, '') || '...'} · {exportForm.base.length}/12
+                      </p>
+                    </div>
+                    <div>
+                      <Label>LAN do cliente (origem)</Label>
+                      <Input
+                        value={exportForm.client_lan}
+                        onChange={(e) => setExportForm((f) => ({ ...f, client_lan: e.target.value }))}
+                        placeholder="192.168.128.0/22 ou all"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">O source do SLA precisa ser um IP do Forti dentro da rede do cliente. Nome do túnel ≤ 15 chars; SLA sem hífen (auto).</p>
                 </>
               )}
               {exportForm.target === 'generic' && (
