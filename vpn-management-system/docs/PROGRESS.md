@@ -1,6 +1,6 @@
 # EdgeGate - Development Progress
 
-## Status: v1.5.2 (lançado) · v1.6.0 IPsec HA/Failover (na branch `feature/ipsec-failover`)
+## Status: v1.6.0 - IPsec HA/Failover
 
 Sistema completo com OpenVPN (client-to-site) e StrongSwan IPsec (site-to-site, **swanctl/vici**).
 
@@ -8,9 +8,9 @@ Sistema completo com OpenVPN (client-to-site) e StrongSwan IPsec (site-to-site, 
 
 ## Changelog
 
-### 2026-07-22 (v1.6.0 — IPsec HA/Failover · NA BRANCH `feature/ipsec-failover`, ainda não lançado)
+### 2026-07-23 (v1.6.0 — IPsec HA/Failover)
 
-> Detalhe completo em `docs/ipsec-ha-failover.md` §8–§12. Validado ao vivo (inclusive queda real de link pelo FortiGate). Aguardando merge na `main` + release.
+> Detalhe completo em `docs/ipsec-ha-failover.md` §8–§12. Validado ao vivo (inclusive queda real de link pelo FortiGate e importação do config exportado no FortiGate).
 
 #### Funcionalidades
 - **Failover ativo/standby** — 2º endpoint do peer (`right_ip_backup`); `remote_addrs = primário, backup` (swanctl multi-homing). DPD rápido (~30-42s) via `dpd_delay=10s` + retransmit afinado.
