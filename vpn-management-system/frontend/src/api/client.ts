@@ -26,6 +26,14 @@ api.interceptors.request.use(
 // Shared refresh promise to prevent concurrent refresh race conditions
 let refreshPromise: Promise<string> | null = null
 
+// Session is gone (refresh failed / no refresh token) -> send the user to the login
+// portal instead of leaving a half-broken, downgraded UI.
+function redirectToLogin() {
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login'
+  }
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -45,8 +53,15 @@ api.interceptors.response.use(
                 refresh_token: refreshToken,
               })
               .then((response) => {
-                const { access_token, refresh_token, user } = response.data
-                useAuthStore.getState().setAuth(user, access_token, refresh_token)
+                // /auth/refresh returns tokens ONLY (no user). Update just the tokens —
+                // clobbering the user with `undefined` dropped is_admin and downgraded the
+                // admin nav to a normal-user view until a full reload (the idle-refresh bug).
+                const { access_token, refresh_token } = response.data
+                useAuthStore.setState({
+                  accessToken: access_token,
+                  refreshToken: refresh_token,
+                  isAuthenticated: true,
+                })
                 return access_token
               })
               .finally(() => {
@@ -60,9 +75,11 @@ api.interceptors.response.use(
         } catch {
           refreshPromise = null
           logout()
+          redirectToLogin()
         }
       } else {
         logout()
+        redirectToLogin()
       }
     }
 
