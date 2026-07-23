@@ -57,16 +57,21 @@ Sistema completo de gerenciamento OpenVPN com interface web moderna, controle gr
 
 | Feature | Descrição |
 |---------|-----------|
-| **Gerenciamento Completo** | Criar, editar, remover conexões IPsec via UI |
-| **Status em Tempo Real** | Mostra IKE SA + Child SA separadamente |
-| **Detecção de Túnel** | UP, DOWN, IKE_ONLY (Phase 2 falhou), CONNECTING |
+| **Gerenciamento Completo** | Criar, editar (só campos alterados), remover (com confirmação) conexões via UI |
+| **Alta Disponibilidade / Failover** (v1.6.0) | 2º IP do peer (`remote_addrs`, swanctl multi-homing); failover automático via DPD (~30-42s) ou queda graciosa (imediato) |
+| **Botões de Ops** (v1.6.0) | Testar failover, switch manual pro backup, rollback pro primário |
+| **Export de Config do Peer** (v1.6.0) | Gera config pronta pra colar no **FortiGate** (SD-WAN CLI, PSK real, limites de nome, notas pós-import) ou **genérica** (parâmetros p/ pfSense/Endian/etc) |
+| **Indicador de Endpoint Ativo** (v1.6.0) | Mostra o IP que carrega tráfego (lido da política XFRM); sininho avisa quando está no backup ou down |
+| **Ver Config Gerada** | Mostra o swanctl que a conexão gera (PSK oculto), por conexão |
+| **Status em Tempo Real** | IKE SA + Child SA; UP / DOWN / IKE_ONLY / CONNECTING |
 | **Logs por Conexão** | Filtrar logs por túnel específico |
 | **Auto-detect IPs** | Detecta IP público/privado automaticamente (AWS IMDSv2) |
 | **Ciphers Compatíveis** | IKE: aes256-sha256-modp2048, ESP: aes256-sha256 |
-| **PSK Authentication** | Pre-shared key com geração de ipsec.secrets |
+| **PSK Authentication** | Pre-shared key (secrets do swanctl) |
 | **IKEv1/IKEv2** | Suporte a ambas versões |
 | **DPD (Dead Peer Detection)** | Restart, Clear, Hold, None |
-| **IPsec Agent** | Serviço no host para executar comandos ipsec |
+| **Stack swanctl/vici** (v1.5.0) | Backend em swanctl (não mais legacy `ipsec.conf`) |
+| **IPsec Agent** | Serviço no host para executar comandos swanctl |
 
 ### Monitoramento
 
@@ -472,11 +477,16 @@ PUT  /api/v1/ipsec/connections/{id}      # Atualizar conexão
 DELETE /api/v1/ipsec/connections/{id}    # Remover conexão
 POST /api/v1/ipsec/connections/{id}/start   # Iniciar túnel
 POST /api/v1/ipsec/connections/{id}/stop    # Parar túnel
-GET  /api/v1/ipsec/status                # Status global (IKE + Child SAs)
-GET  /api/v1/ipsec/statusall             # Output detalhado do ipsec statusall
+POST /api/v1/ipsec/connections/{id}/switch-backup    # (v1.6) Forçar o IP de backup
+POST /api/v1/ipsec/connections/{id}/rollback-primary # (v1.6) Voltar pro primário
+POST /api/v1/ipsec/connections/{id}/test-failover    # (v1.6) Simular queda + auto-restore
+GET  /api/v1/ipsec/connections/{id}/config           # (v1.6) Config swanctl gerada (PSK oculto)
+GET  /api/v1/ipsec/connections/{id}/export           # (v1.6) Export FortiGate/genérico
+GET  /api/v1/ipsec/status                # Status global (IKE + Child SAs, endpoint ativo)
+GET  /api/v1/ipsec/statusall             # Output detalhado do swanctl --list-sas
 GET  /api/v1/ipsec/logs                  # Logs do StrongSwan
 POST /api/v1/ipsec/apply                 # Aplicar configuração
-GET  /api/v1/ipsec/config/preview        # Preview de ipsec.conf/secrets
+GET  /api/v1/ipsec/config/preview        # Preview da config gerada
 GET  /api/v1/ipsec/server-info           # Auto-detect IPs do servidor
 ```
 
@@ -712,6 +722,20 @@ MIT License
 ---
 
 ## Changelog
+
+### v1.6.0 (2026-07-23) — IPsec HA/Failover
+- ✅ **Failover ativo/standby** entre 2 IPs fixos do peer (swanctl multi-homing); DPD ~30-42s ou imediato numa queda graciosa
+- ✅ **Botões de ops**: testar failover, switch manual pro backup, rollback pro primário
+- ✅ **Export de config do peer**: FortiGate (SD-WAN CLI pronta, PSK real, limites de nome, policy escopada na LAN do cliente, notas pós-import) e genérico (parâmetros)
+- ✅ **Indicador de endpoint ativo** (lido da política XFRM) + **alertas no sininho** (rodando no backup, túnel down)
+- ✅ Ver config gerada por conexão; delete com type-to-confirm; ações da linha em dropdown `⋮`
+- ✅ Correções: PSK multi-id/tipo de id, 500 no PUT (DetachedInstance), edit diff-based, contagem do dashboard
+- 📄 Detalhes: `docs/ipsec-ha-failover.md`
+
+### v1.5.0 – v1.5.2 (2026-07-21) — Migração para swanctl
+- ✅ StrongSwan migrado de legacy `ipsec.conf` para **swanctl/vici**; auto-migração no `update.sh` (host legacy migra ao atualizar)
+- ✅ v1.5.1: `update.sh` conserta o bind-mount do traefik que derrubava no reboot
+- ✅ v1.5.2: backend aplica a config IPsec no startup (túneis auto-carregam após restart/migração)
 
 ### v1.2.0 (2026-02-05)
 - ✅ **IPsec Site-to-Site VPN** - Gerenciamento completo via StrongSwan
