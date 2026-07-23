@@ -277,6 +277,8 @@ export interface IPsecStatus {
     bytes_out?: number
     rekey_time?: string
     error_hint?: string
+    remote_host?: string | null
+    active_paths?: number
   }>
 }
 

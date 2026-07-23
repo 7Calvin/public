@@ -652,17 +652,29 @@ export default function IPsecPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 font-mono text-xs">
-                          <div>
-                            <p className={!conn.prefer_backup && conn.right_ip_backup ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : ''}>
-                              {conn.right_ip}{!conn.prefer_backup && conn.right_ip_backup ? ' ✓' : ''}
-                            </p>
-                            {conn.right_ip_backup && (
-                              <p className={conn.prefer_backup ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-muted-foreground'}>
-                                backup: {conn.right_ip_backup}{conn.prefer_backup ? ' ✓' : ''}
-                              </p>
-                            )}
-                            <p className="text-muted-foreground">ID: {conn.right_id}</p>
-                          </div>
+                          {(() => {
+                            // Endpoint que REALMENTE carrega tráfego (lido da política XFRM
+                            // no backend). Fallback pro prefer_backup se o status ainda não
+                            // souber. So marca ✓ quando há backup configurado (senão é trivial).
+                            const active = liveStatus?.remote_host
+                              || (conn.prefer_backup ? conn.right_ip_backup : conn.right_ip)
+                            const priActive = !!conn.right_ip_backup && active === conn.right_ip
+                            const bakActive = !!conn.right_ip_backup && active === conn.right_ip_backup
+                            const on = 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                            return (
+                              <div>
+                                <p className={priActive ? on : ''}>
+                                  {conn.right_ip}{priActive ? ' ✓' : ''}
+                                </p>
+                                {conn.right_ip_backup && (
+                                  <p className={bakActive ? on : 'text-muted-foreground'}>
+                                    backup: {conn.right_ip_backup}{bakActive ? ' ✓' : ''}
+                                  </p>
+                                )}
+                                <p className="text-muted-foreground">ID: {conn.right_id}</p>
+                              </div>
+                            )
+                          })()}
                         </td>
                         <td className="px-4 py-3 font-mono text-xs">
                           <div>

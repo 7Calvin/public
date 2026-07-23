@@ -561,7 +561,36 @@ class IPsecService:
             }
 
         # Parse output
-        return self._parse_status_output(output)
+        result = self._parse_status_output(output)
+        await self._annotate_active_remote(result)
+        return result
+
+    async def _annotate_active_remote(self, result: Dict[str, Any]) -> None:
+        """Set each connection's `remote_host` to the endpoint ACTUALLY carrying outbound
+        traffic, read from the kernel XFRM policy via the agent (`/active-remote`).
+        list-sas' remote_host is unreliable and `prefer_backup` is only a preference — so
+        the panel would show the wrong active IP (e.g. "primary" while everything runs on
+        the backup because the primary link is down). This makes it reflect reality."""
+        entries = result.get("connections") or []
+        if not entries:
+            return
+        try:
+            ok, data = await self._agent_post("/active-remote")
+            active = set((data or {}).get("all") or []) if (ok and isinstance(data, dict)) else set()
+            if not active:
+                return
+            rows = (await self.db.execute(select(IPsecConnection))).scalars().all()
+            by_name = {c.name: c for c in rows}
+            for entry in entries:
+                c = by_name.get(entry.get("name"))
+                if not c:
+                    continue
+                if c.right_ip in active:
+                    entry["remote_host"] = c.right_ip
+                elif (c.right_ip_backup or "") in active:
+                    entry["remote_host"] = c.right_ip_backup
+        except Exception as e:  # noqa: BLE001 — never break status on this enrichment
+            logger.debug("active-remote annotation skipped: %s", e)
 
     def _parse_status_output(self, output: str) -> Dict[str, Any]:
         """Parse `swanctl --list-sas` text output into the status structure.
