@@ -562,38 +562,60 @@ class IPsecService:
 
         # Parse output
         result = self._parse_status_output(output)
-        await self._annotate_active_remote(result)
+        await self._enrich_status(result, single_name=name)
         return result
 
-    async def _annotate_active_remote(self, result: Dict[str, Any]) -> None:
-        """Set each connection's `remote_host` to the endpoint ACTUALLY carrying outbound
-        traffic, read from the kernel XFRM policy via the agent (`/active-remote`).
-        list-sas' remote_host is unreliable and `prefer_backup` is only a preference — so
-        the panel would show the wrong active IP (e.g. "primary" while everything runs on
-        the backup because the primary link is down). This makes it reflect reality."""
-        entries = result.get("connections") or []
-        if not entries:
-            return
+    async def _enrich_status(self, result: Dict[str, Any], single_name: Optional[str] = None) -> None:
+        """Reconcile the parsed SA list with the DB and the kernel XFRM policy so the status
+        reflects reality:
+          - each live connection's `remote_host`/`on_backup` = the endpoint actually carrying
+            outbound traffic (read via the agent `/active-remote`) — not `prefer_backup`;
+          - every ENABLED connection with NO live SA is added as a DOWN entry (otherwise a
+            fully-down tunnel just vanishes — there's no SA to parse);
+          - total_connections = enabled connections (what SHOULD be up), active_tunnels = UP.
+        Without this, both-tunnels-down => 0 SAs => total=0 => the 'túnel fora do ar' alert
+        never fires and the connection disappears from the panel."""
         try:
+            entries = result.get("connections") or []
+            result["connections"] = entries
+            by_entry = {e.get("name"): e for e in entries}
+
             ok, data = await self._agent_post("/active-remote")
             active = set((data or {}).get("all") or []) if (ok and isinstance(data, dict)) else set()
-            if not active:
-                return
-            rows = (await self.db.execute(select(IPsecConnection))).scalars().all()
-            by_name = {c.name: c for c in rows}
-            for entry in entries:
-                c = by_name.get(entry.get("name"))
-                if not c:
-                    continue
-                backup = (c.right_ip_backup or "").strip()
-                if c.right_ip in active:
-                    entry["remote_host"] = c.right_ip
-                    entry["on_backup"] = False if backup else None
-                elif backup and backup in active:
-                    entry["remote_host"] = backup
-                    entry["on_backup"] = True  # rodando no backup => primário indisponível
-        except Exception as e:  # noqa: BLE001 — never break status on this enrichment
-            logger.debug("active-remote annotation skipped: %s", e)
+
+            q = select(IPsecConnection).where(IPsecConnection.is_enabled.is_(True))
+            if single_name:
+                q = q.where(IPsecConnection.name == single_name)
+            rows = (await self.db.execute(q)).scalars().all()
+
+            for c in rows:
+                entry = by_entry.get(c.name)
+                if entry is not None:
+                    backup = (c.right_ip_backup or "").strip()
+                    if active:
+                        if c.right_ip in active:
+                            entry["remote_host"] = c.right_ip
+                            entry["on_backup"] = False if backup else None
+                        elif backup and backup in active:
+                            entry["remote_host"] = backup
+                            entry["on_backup"] = True  # backup ativo => primário indisponível
+                else:
+                    entries.append({
+                        "name": c.name, "status": "DOWN", "ike_status": "DOWN",
+                        "tunnel_status": "DOWN", "has_child_sa": False, "active_paths": 0,
+                        "remote_host": None, "on_backup": None, "uptime": None,
+                        "local_ts": c.left_subnet, "remote_ts": c.right_subnet,
+                        "bytes_in": None, "bytes_out": None, "rekey_time": None,
+                        "error_hint": None,
+                    })
+
+            enabled_names = {c.name for c in rows}
+            result["total_connections"] = len(rows)
+            result["active_tunnels"] = sum(
+                1 for e in entries if e.get("tunnel_status") == "UP" and e.get("name") in enabled_names
+            )
+        except Exception as e:  # noqa: BLE001 — never break status on enrichment
+            logger.debug("status enrichment skipped: %s", e)
 
     def _parse_status_output(self, output: str) -> Dict[str, Any]:
         """Parse `swanctl --list-sas` text output into the status structure.

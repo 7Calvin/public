@@ -81,7 +81,9 @@ export function useSystemStatus() {
   }
   if (ipsec?.total_connections > 0 && ipsec.active_tunnels < ipsec.total_connections) {
     const down = ipsec.total_connections - ipsec.active_tunnels
-    alerts.push({ level: 'warn', text: `${down} túnel(is) IPsec fora do ar`, href: '/ipsec' })
+    // Todos os túneis fora = down (vermelho); parcial = warn (amarelo).
+    const level: AlertLevel = ipsec.active_tunnels === 0 ? 'down' : 'warn'
+    alerts.push({ level, text: `${down} túnel(is) IPsec fora do ar`, href: '/ipsec' })
   }
   const onBackup = (ipsec?.connections || []).filter((c: { on_backup?: boolean | null }) => c.on_backup)
   if (onBackup.length > 0) {
