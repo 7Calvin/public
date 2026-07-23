@@ -1,12 +1,15 @@
 # EdgeGate - Development Progress
 
-## Status: v1.6.0 - IPsec HA/Failover
+## Status: v1.6.1
 
 Sistema completo com OpenVPN (client-to-site) e StrongSwan IPsec (site-to-site, **swanctl/vici**).
 
 ---
 
 ## Changelog
+
+### 2026-07-23 (v1.6.1 — Fix auth)
+- 🐛 Refresh de token no idle não rebaixa mais o admin (o interceptor do 401 setava `user=undefined`, perdendo o `is_admin` e derrubando o menu). Agora atualiza só os tokens; sessão perdida redireciona pro `/login`.
 
 ### 2026-07-23 (v1.6.0 — IPsec HA/Failover)
 

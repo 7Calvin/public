@@ -723,6 +723,9 @@ MIT License
 
 ## Changelog
 
+### v1.6.1 (2026-07-23)
+- 🐛 **Fix auth**: refresh de token no idle não rebaixa mais o admin — o menu completo se mantém (o interceptor do 401 atualizava o user com `undefined`, zerando o `is_admin`). Sessão perdida agora redireciona pro `/login`.
+
 ### v1.6.0 (2026-07-23) — IPsec HA/Failover
 - ✅ **Failover ativo/standby** entre 2 IPs fixos do peer (swanctl multi-homing); DPD ~30-42s ou imediato numa queda graciosa
 - ✅ **Botões de ops**: testar failover, switch manual pro backup, rollback pro primário
