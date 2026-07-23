@@ -638,14 +638,7 @@ export default function IPsecPage() {
                       <tr key={conn.id} className="border-b hover:bg-muted/50">
                         <td className="px-4 py-3">
                           <div>
-                            <p className="font-medium">
-                              {conn.name}
-                              {conn.prefer_backup && conn.right_ip_backup && (
-                                <span className="ml-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 align-middle">
-                                  <ArrowLeftRight className="h-3 w-3" /> BACKUP
-                                </span>
-                              )}
-                            </p>
+                            <p className="font-medium">{conn.name}</p>
                             {conn.description && (
                               <p className="text-xs text-muted-foreground">{conn.description}</p>
                             )}
@@ -653,22 +646,28 @@ export default function IPsecPage() {
                         </td>
                         <td className="px-4 py-3 font-mono text-xs">
                           {(() => {
-                            // Endpoint que REALMENTE carrega tráfego (lido da política XFRM
-                            // no backend). Fallback pro prefer_backup se o status ainda não
-                            // souber. So marca ✓ quando há backup configurado (senão é trivial).
+                            // Endpoint que REALMENTE carrega tráfego (lido da política XFRM no
+                            // backend). Fallback pro prefer_backup se o status ainda não souber.
+                            // Indicador padrão único: chip "ATIVO" (+ "· manual" quando é switch
+                            // forçado) no IP em uso — igual pra failover automático e manual.
                             const active = liveStatus?.remote_host
                               || (conn.prefer_backup ? conn.right_ip_backup : conn.right_ip)
-                            const priActive = !!conn.right_ip_backup && active === conn.right_ip
-                            const bakActive = !!conn.right_ip_backup && active === conn.right_ip_backup
-                            const on = 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                            const hasBackup = !!conn.right_ip_backup
+                            const priActive = hasBackup && active === conn.right_ip
+                            const bakActive = hasBackup && active === conn.right_ip_backup
+                            const chip = (
+                              <span className="ml-1.5 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 align-middle">
+                                ATIVO{conn.prefer_backup ? ' · manual' : ''}
+                              </span>
+                            )
                             return (
                               <div>
-                                <p className={priActive ? on : ''}>
-                                  {conn.right_ip}{priActive ? ' ✓' : ''}
+                                <p className={priActive ? 'font-semibold' : ''}>
+                                  {conn.right_ip}{priActive && chip}
                                 </p>
-                                {conn.right_ip_backup && (
-                                  <p className={bakActive ? on : 'text-muted-foreground'}>
-                                    backup: {conn.right_ip_backup}{bakActive ? ' ✓' : ''}
+                                {hasBackup && (
+                                  <p className={bakActive ? 'font-semibold' : 'text-muted-foreground'}>
+                                    backup: {conn.right_ip_backup}{bakActive && chip}
                                   </p>
                                 )}
                                 <p className="text-muted-foreground">ID: {conn.right_id}</p>

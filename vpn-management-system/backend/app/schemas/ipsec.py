@@ -296,6 +296,7 @@ class IPsecStatusResponse(BaseModel):
     has_child_sa: Optional[bool] = None  # Whether Child SA (ESP tunnel) is installed
     active_paths: Optional[int] = None  # HA/failover: how many endpoints have an SA up
     remote_host: Optional[str] = None  # HA/failover: the endpoint actually carrying traffic
+    on_backup: Optional[bool] = None  # HA/failover: True = running on the backup (primary down)
     uptime: Optional[str] = None
     local_ts: Optional[str] = None  # Traffic selector
     remote_ts: Optional[str] = None

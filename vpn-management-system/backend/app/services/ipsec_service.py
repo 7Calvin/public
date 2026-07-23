@@ -585,10 +585,13 @@ class IPsecService:
                 c = by_name.get(entry.get("name"))
                 if not c:
                     continue
+                backup = (c.right_ip_backup or "").strip()
                 if c.right_ip in active:
                     entry["remote_host"] = c.right_ip
-                elif (c.right_ip_backup or "") in active:
-                    entry["remote_host"] = c.right_ip_backup
+                    entry["on_backup"] = False if backup else None
+                elif backup and backup in active:
+                    entry["remote_host"] = backup
+                    entry["on_backup"] = True  # rodando no backup => primário indisponível
         except Exception as e:  # noqa: BLE001 — never break status on this enrichment
             logger.debug("active-remote annotation skipped: %s", e)
 

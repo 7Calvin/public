@@ -279,6 +279,7 @@ export interface IPsecStatus {
     error_hint?: string
     remote_host?: string | null
     active_paths?: number
+    on_backup?: boolean | null
   }>
 }
 

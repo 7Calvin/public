@@ -83,6 +83,11 @@ export function useSystemStatus() {
     const down = ipsec.total_connections - ipsec.active_tunnels
     alerts.push({ level: 'warn', text: `${down} túnel(is) IPsec fora do ar`, href: '/ipsec' })
   }
+  const onBackup = (ipsec?.connections || []).filter((c: { on_backup?: boolean | null }) => c.on_backup)
+  if (onBackup.length > 0) {
+    const names = onBackup.map((c: { name: string }) => c.name).join(', ')
+    alerts.push({ level: 'warn', text: `IPsec no backup — link primário indisponível: ${names}`, href: '/ipsec' })
+  }
 
   const status: 'ok' | 'warn' | 'down' =
     alerts.some((a) => a.level === 'down') ? 'down' : alerts.some((a) => a.level === 'warn') ? 'warn' : 'ok'
