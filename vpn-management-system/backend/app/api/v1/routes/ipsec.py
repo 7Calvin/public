@@ -749,6 +749,17 @@ config firewall policy
     next
 end
 
+# ── IMPORTANTE (depois de colar) ────────────────────────────────────────────
+# 1) Rode  diagnose sys session clear  — sessões em cache seguram o caminho antigo
+#    (rota/NAT) e o tráfego "vai mas não volta". Filtre p/ nossa rede se preferir:
+#      diagnose sys session filter dst {lnet}
+#      diagnose sys session clear
+# 2) Se você usa Central SNAT, o `nat disable` das policies é IGNORADO — adicione
+#    uma exceção no-NAT p/ esta VPN (orig={cli_src if cli_src != 'all' else '<rede-cliente>'},
+#    dst={net_addr}, nat disable) no topo do central-snat-map, senão o transit sai
+#    NATeado pela WAN e a volta quebra.
+# 3) O SLA precisa ter `source` dentro da rede protegida do cliente (já setado acima).
+#
 # ── UNDO ─ cole para remover tudo acima ─────────────────────────────────────
 # firewall policy: delete {pol_out} / {pol_in}
 # router static: delete as rotas (dst {lnet}/{lmask})

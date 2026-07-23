@@ -1445,12 +1445,12 @@ export default function IPsecPage() {
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><Label>WAN primário</Label><Input value={exportForm.wan_pri} onChange={(e) => setExportForm((f) => ({ ...f, wan_pri: e.target.value }))} placeholder="wan2" /></div>
-                    <div><Label>WAN backup</Label><Input value={exportForm.wan_bak} onChange={(e) => setExportForm((f) => ({ ...f, wan_bak: e.target.value }))} placeholder="wan1" /></div>
+                    <div><Label>WAN primário</Label><Input value={exportForm.wan_pri} onChange={(e) => setExportForm((f) => ({ ...f, wan_pri: e.target.value }))} placeholder="ex: wan1" /></div>
+                    <div><Label>WAN backup</Label><Input value={exportForm.wan_bak} onChange={(e) => setExportForm((f) => ({ ...f, wan_bak: e.target.value }))} placeholder="ex: wan2" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><Label>Interface LAN</Label><Input value={exportForm.lan_if} onChange={(e) => setExportForm((f) => ({ ...f, lan_if: e.target.value }))} placeholder="VLAN 10" /></div>
-                    <div><Label>Source do SLA</Label><Input value={exportForm.sla_src} onChange={(e) => setExportForm((f) => ({ ...f, sla_src: e.target.value }))} placeholder="192.168.128.1" /></div>
+                    <div><Label>Interface LAN</Label><Input value={exportForm.lan_if} onChange={(e) => setExportForm((f) => ({ ...f, lan_if: e.target.value }))} placeholder="ex: internal" /></div>
+                    <div><Label>Source do SLA</Label><Input value={exportForm.sla_src} onChange={(e) => setExportForm((f) => ({ ...f, sla_src: e.target.value }))} placeholder="ex: IP LAN do FortiGate" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div><Label>Local ID primário</Label><Input value={exportForm.localid_pri} onChange={(e) => setExportForm((f) => ({ ...f, localid_pri: e.target.value }))} placeholder={exportConn?.right_ip} /></div>
@@ -1463,7 +1463,7 @@ export default function IPsecPage() {
                         value={exportForm.base}
                         maxLength={12}
                         onChange={(e) => setExportForm((f) => ({ ...f, base: e.target.value.replace(/[^A-Za-z0-9-]/g, '') }))}
-                        placeholder="AWStoMAC"
+                        placeholder="ex: VPN-AWS"
                       />
                       <p className="text-[10px] text-muted-foreground mt-0.5">
                         túnel {(exportForm.base || '...')}-01/-02 · SLA {exportForm.base.replace(/[^A-Za-z0-9]/g, '') || '...'} · {exportForm.base.length}/12
@@ -1474,7 +1474,7 @@ export default function IPsecPage() {
                       <Input
                         value={exportForm.client_lan}
                         onChange={(e) => setExportForm((f) => ({ ...f, client_lan: e.target.value }))}
-                        placeholder="192.168.128.0/22 ou all"
+                        placeholder="ex: 10.0.0.0/24 ou all"
                       />
                     </div>
                   </div>
